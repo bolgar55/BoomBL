@@ -39,7 +39,7 @@ export function createBotLogic(deps = {}) {
   function handleStart(message) {
     return callApi('sendMessage', {
       chat_id: message.chat.id,
-      text: 'Block Blast — нажми кнопку ниже, чтобы начать игру.',
+      text: 'BoomBL — нажми кнопку ниже, чтобы начать игру.',
       reply_markup: {
         inline_keyboard: [[{ text: 'Играть', web_app: { url: gameUrl } }]],
       },

@@ -90,6 +90,10 @@ let displayedScore = 0; // то, что реально показано в score
 let highScore = 0;
 let cellSize = 0;
 let gameOver = false;
+// R05.5: сколько ходов подряд прошло без очистки линии — растёт «умную»
+// генерацию лотка (game/shapes.js) в сторону спасительных фигур, когда
+// игроку давно не удаётся ни одной комбо-очистки.
+let movesSinceClear = 0;
 
 function currentTheme() {
   return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
@@ -222,13 +226,38 @@ async function main() {
     displayedScore = totalScore;
   }
 
-  function updateScoreUI(comboStreak) {
-    revealScore();
+  function updateComboBadge(comboStreak) {
     if (comboStreak > 0) {
       comboValueEl.hidden = false;
       comboValueEl.textContent = i18n.t('combo', { goal: comboStreak });
     } else {
       comboValueEl.hidden = true;
+    }
+  }
+
+  function updateScoreUI(comboStreak) {
+    revealScore();
+    updateComboBadge(comboStreak);
+  }
+
+  // R05.6: серия комбо больше не сбрасывается ходом без очистки — только
+  // бездействием. Каждый успешный ход переставляет этот таймер; если игрок
+  // не делает следующий ход COMBO_IDLE_MS — серия обнуляется (score.expireCombo).
+  const COMBO_IDLE_MS = 10000;
+  let comboIdleTimer = null;
+
+  function scheduleComboExpiry() {
+    if (comboIdleTimer) clearTimeout(comboIdleTimer);
+    comboIdleTimer = setTimeout(() => {
+      comboIdleTimer = null;
+      if (score.expireCombo()) updateComboBadge(0);
+    }, COMBO_IDLE_MS);
+  }
+
+  function cancelComboExpiry() {
+    if (comboIdleTimer) {
+      clearTimeout(comboIdleTimer);
+      comboIdleTimer = null;
     }
   }
 
@@ -269,6 +298,7 @@ async function main() {
     // продолжается; ни одна не влезает — Game Over.
     if (!hasAnyValidMove(board, shapes)) {
       gameOver = true;
+      cancelComboExpiry();
       reportGameEvent({ gameOver: true });
       showGameOver();
     }
@@ -276,9 +306,9 @@ async function main() {
 
   function refillTrayIfEmpty() {
     if (shapes.every((s) => s === null)) {
-      // «Умная» генерация (R05.5) смотрит на текущее поле, а не выдаёт
-      // фигуры вслепую — see game/shapes.js pickForBoard.
-      shapes = generateShapeSet(board);
+      // «Умная» генерация (R05.5) смотрит на текущее поле и на то, как давно
+      // не было очистки линии — see game/shapes.js pickForBoard.
+      shapes = generateShapeSet(board, { movesSinceClear });
       shapeColors = shapes.map(() => randomBlockColor());
       renderTray();
       playAppear(trayEls);
@@ -323,6 +353,7 @@ async function main() {
 
     const linesCleared = clearedRows.length + clearedCols.length;
     const { points, comboStreak } = score.addMove({ cellsPlaced, linesCleared });
+    movesSinceClear = linesCleared > 0 ? 0 : movesSinceClear + 1;
 
     const gapBonus = isGapFill ? pocket.length * GAP_FILL_BONUS_PER_CELL : 0;
 
@@ -405,6 +436,7 @@ async function main() {
       }, FULL_CLEAR_PAUSE_MS);
     }
 
+    scheduleComboExpiry(); // R05.6: успешный ход переставляет таймер бездействия комбо
     refillTrayIfEmpty();
     reportGameEvent({ linesCleared, scoreDelta: points + gapBonus, comboStreak, shapesPlaced: 1, gameOver: false });
     checkGameOver();
@@ -454,12 +486,14 @@ async function main() {
 
   // ---- новая партия поверх той же сессии (без перезагрузки страницы) ----
   function resetGame() {
+    cancelComboExpiry();
     board = new Board();
     score = new Score();
     shapes = generateShapeSet(board);
     shapeColors = shapes.map(() => randomBlockColor());
     colorGrid = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
     totalScore = 0;
+    movesSinceClear = 0;
     // Сброс счёта — сразу, без анимации отсчёта вниз (animateScoreCountUp
     // внутри updateScoreUI ничего не делает при from===to).
     displayedScore = 0;

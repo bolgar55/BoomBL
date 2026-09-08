@@ -1,9 +1,9 @@
 {
-  "name": "block-blast-tma",
+  "name": "boombl-tma",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Block Blast — Telegram Mini App",
+  "description": "BoomBL — Telegram Mini App",
   "scripts": {
     "test": "node --test"
   }

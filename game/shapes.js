@@ -101,7 +101,40 @@ function pickPureRandom() {
 // Доля попыток, когда генератор намеренно предпочитает фигуру, у которой
 // хотя бы одна позиция создаёт комбо-очистку (R05.5, «иногда отдавать
 // фигуры для комбо») — не всегда, чтобы игра оставалась непредсказуемой.
+// В «затянувшейся» ситуации (см. effectiveComboBiasChance) этот шанс скрыто
+// растёт — игрок этого не видит, просто чаще получает шанс на комбо.
 const COMBO_BIAS_CHANCE = 0.25;
+const COMBO_BIAS_CHANCE_MAX = 0.75; // даже в самой сложной ситуации не 100% — не убирать элемент случайности
+
+// Единичная фигура-«зонд»: findValidPlacements(DOT_PROBE, board).length —
+// ровно число пустых клеток поля (dot помещается в любую пустую клетку и
+// никакую другую) — дешёвый способ оценить «тесноту» поля без отдельного
+// метода Board для подсчёта пустых клеток.
+const DOT_PROBE = { cells: [[0, 0]] };
+
+function boardOpenness(board) {
+  return findValidPlacements(DOT_PROBE, board).length / (BOARD_SIZE * BOARD_SIZE);
+}
+
+/**
+ * Скрытая вероятность сузить выбор до «спасительных» фигур (R05.5, «скрытая
+ * система вероятностей»): базовая COMBO_BIAS_CHANCE растёт, если игрок давно
+ * не чистил линию (movesSinceClear) или поле уже тесное (openness — доля
+ * свободных клеток) — то есть именно тогда, когда объективно сложно. Игрок
+ * не видит эту вероятность и не может её просчитать — просто замечает, что
+ * подходящие фигуры «иногда» приходят чаще, когда приходится тяжело.
+ * @param {number} movesSinceClear
+ * @param {number} openness
+ * @returns {number}
+ */
+function effectiveComboBiasChance(movesSinceClear, openness) {
+  let chance = COMBO_BIAS_CHANCE;
+  if (movesSinceClear >= 6) chance = Math.max(chance, 0.65);
+  else if (movesSinceClear >= 3) chance = Math.max(chance, 0.45);
+  if (openness < 0.2) chance = Math.max(chance, 0.65);
+  else if (openness < 0.35) chance = Math.max(chance, 0.45);
+  return Math.min(chance, COMBO_BIAS_CHANCE_MAX);
+}
 
 /** Взвешенный случайный выбор — chance каждого элемента пропорционален его весу. */
 function weightedPick(items, weightOf) {
@@ -116,38 +149,59 @@ function weightedPick(items, weightOf) {
 }
 
 /**
- * Выбирает одну фигуру каталога с учётом текущего поля (R05.5):
+ * Выбирает одну фигуру каталога с учётом текущего поля и того, насколько
+ * игроку сейчас тяжело (R05.5):
  * 1) сначала оставляет только фигуры, у которых есть хоть одна допустимая
- *    позиция на этом поле (canPlacePiece/findValidPlacements) — не выдаём
- *    заведомо непригодную фигуру, пока есть выбор;
+ *    позиция на этом поле (findValidPlacements) — не выдаём заведомо
+ *    непригодную фигуру, пока есть выбор;
  * 2) внутри этого набора вес фигуры растёт с числом её позиций («гибкие»
- *    фигуры, которые проще пристроить дальше, чуть более вероятны — «желательно
- *    отдавать фигуры, которые позволяют продолжать игру»), но каждая
- *    подходящая фигура всё равно имеет ненулевой шанс — генерация не должна
- *    становиться слишком предсказуемой или упрощать игру;
- * 3) иногда (COMBO_BIAS_CHANCE) сознательно сужает выбор до фигур, у которых
- *    хотя бы одна позиция немедленно очистила бы линию — «иногда отдавать
- *    фигуры для комбо», не каждый раз.
+ *    фигуры, которые проще пристроить дальше, чуть более вероятны —
+ *    «желательно отдавать фигуры, которые позволяют продолжать игру»), но
+ *    каждая подходящая фигура всё равно имеет ненулевой шанс;
+ * 3) с вероятностью effectiveComboBiasChance (тем выше, чем дольше нет
+ *    очистки и чем теснее поле — «скрытая система вероятностей») сужает
+ *    выбор до фигур, у которых хотя бы одна позиция немедленно очистила бы
+ *    линию — «иногда отдавать фигуры для комбо», по-настоящему чаще именно
+ *    в сложной ситуации, а не всегда одинаково;
+ * 4) в этой же сложной ситуации (см. struggling) дополнительно взвешивает
+ *    внутри пула по тому, СКОЛЬКО клеток очистила бы лучшая позиция фигуры —
+ *    не просто «может дать комбо», а «даёт заметно освободить поле»
+ *    («помогают открыть новые свободные области»).
  * Если на поле физически не помещается ни одна фигура каталога (крайний
  * случай — доска уже фактически проиграна), возвращает чистый случайный
  * выбор: подбирать тут больше не из чего.
  * @param {import('./board.js').Board} board
+ * @param {{movesSinceClear?: number}} [context] - сколько ходов подряд без очистки линии (app.js ведёт счётчик)
  * @returns {Shape}
  */
-function pickForBoard(board) {
+function pickForBoard(board, context = {}) {
+  const movesSinceClear = context.movesSinceClear ?? 0;
+
   const evaluated = SHAPE_CATALOG.map((source) => {
     const placements = findValidPlacements(source, board);
-    const comboCapable = placements.some((p) => board.previewClear(source, p.row, p.col).cells.length > 0);
-    return { source, placements, comboCapable };
+    let bestClearSize = 0;
+    for (const p of placements) {
+      const cleared = board.previewClear(source, p.row, p.col).cells.length;
+      if (cleared > bestClearSize) bestClearSize = cleared;
+    }
+    return { source, placements, bestClearSize };
   });
 
   const placeable = evaluated.filter((e) => e.placements.length > 0);
   if (placeable.length === 0) return pickPureRandom();
 
-  const comboCandidates = placeable.filter((e) => e.comboCapable);
-  const pool = comboCandidates.length > 0 && Math.random() < COMBO_BIAS_CHANCE ? comboCandidates : placeable;
+  const openness = boardOpenness(board);
+  const struggling = movesSinceClear >= 3 || openness < 0.35;
 
-  const picked = weightedPick(pool, (e) => 1 + Math.min(e.placements.length, 10) * 0.5);
+  const comboCandidates = placeable.filter((e) => e.bestClearSize > 0);
+  const biasChance = effectiveComboBiasChance(movesSinceClear, openness);
+  const pool = comboCandidates.length > 0 && Math.random() < biasChance ? comboCandidates : placeable;
+
+  const picked = weightedPick(pool, (e) => {
+    let weight = 1 + Math.min(e.placements.length, 10) * 0.5;
+    if (struggling) weight += e.bestClearSize * 0.8;
+    return weight;
+  });
   return cloneShape(picked.source);
 }
 
@@ -158,14 +212,16 @@ function pickForBoard(board) {
  * вызов без контекста поля). С board — «умная» генерация (R05.5): каждая
  * из 3 фигур подбирается через pickForBoard независимо, глядя на одно и то
  * же текущее состояние поля (все три ещё не размещены, поле одно и то же
- * для всех трёх).
+ * для всех трёх). context.movesSinceClear (от app.js) включает более
+ * настойчивую помощь, когда игрок давно не чистил линию.
  * @param {import('./board.js').Board} [board]
+ * @param {{movesSinceClear?: number}} [context]
  * @returns {Shape[]}
  */
-export function generateShapeSet(board) {
+export function generateShapeSet(board, context) {
   const result = [];
   for (let i = 0; i < 3; i++) {
-    result.push(board ? pickForBoard(board) : pickPureRandom());
+    result.push(board ? pickForBoard(board, context) : pickPureRandom());
   }
   return result;
 }

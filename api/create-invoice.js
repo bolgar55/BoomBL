@@ -46,7 +46,7 @@ export function createInvoiceHandler(deps = {}) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'Поддержать разработчика',
-          description: 'Донат автору игры Block Blast через Telegram Stars',
+          description: 'Донат автору игры BoomBL через Telegram Stars',
           // payload — произвольная строка для сверки на стороне бота, платёж
           // разовый и нигде не сохраняется (spec §Решения 8/12).
           payload: `donate_${amountStars}_${Date.now()}`,

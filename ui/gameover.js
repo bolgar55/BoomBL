@@ -45,7 +45,7 @@ export function computeGameOverState(score, previousHighScore) {
  * @returns {string}
  */
 export function formatShareText(score, isNewRecordFlag) {
-  const base = `Я набрал ${score} очков в Block Blast!`;
+  const base = `Я набрал ${score} очков в BoomBL!`;
   return isNewRecordFlag ? `${base} Новый личный рекорд!` : base;
 }
 
