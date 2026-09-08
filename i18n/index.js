@@ -17,7 +17,6 @@ const DICTIONARIES = {
   ru: {
     score: 'Очки',
     highScore: 'Рекорд',
-    hint: 'Подсказка',
     result: 'Результат',
     gameOver: 'Игра окончена',
     playAgain: 'Играть снова',
@@ -25,7 +24,6 @@ const DICTIONARIES = {
     combo: 'Комбо ×{goal}',
     language: 'Язык',
     sound: 'Звук',
-    donate: 'Задонатить',
     dailyChallenge: 'Ежедневный челлендж',
     'challenge.clearLines': 'Очисти {goal} линий за партию',
     'challenge.score': 'Набери {goal} очков',
@@ -36,7 +34,6 @@ const DICTIONARIES = {
   en: {
     score: 'Score',
     highScore: 'High score',
-    hint: 'Hint',
     result: 'Result',
     gameOver: 'Game over',
     playAgain: 'Play again',
@@ -44,7 +41,6 @@ const DICTIONARIES = {
     combo: 'Combo ×{goal}',
     language: 'Language',
     sound: 'Sound',
-    donate: 'Donate',
     dailyChallenge: 'Daily challenge',
     'challenge.clearLines': 'Clear {goal} lines in one game',
     'challenge.score': 'Score {goal} points',

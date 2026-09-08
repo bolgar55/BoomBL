@@ -164,13 +164,6 @@ body {
   font-weight: 700;
 }
 
-/* ---------- Донат (R43) ---------- */
-
-#donate-panel {
-  display: flex;
-  justify-content: center;
-}
-
 #status-line {
   color: var(--text-muted);
   font-size: 13px;

@@ -3,19 +3,20 @@
 // построенные в тикетах 01–06, в одно рабочее приложение: игровой цикл
 // (board/shapes/score), рендеринг и ввод (ui/render, ui/input, ui/animations),
 // персистентность high score и настроек, мост к Telegram (тема/haptics/
-// MainButton/шеринг), экран Game Over, звук, i18n, ежедневный челлендж и
-// донат через Stars. Сам модуль (как и весь `ui`, см. interfaces.md) наружу
-// ничего не выставляет — это верхний уровень приложения.
+// MainButton/шеринг), экран Game Over, звук, i18n, ежедневный челлендж.
+// Кнопки «Подсказка» и «Задонатить» из интерфейса убраны по просьбе — сами
+// модули (ui/input.js findHint, ui/donate.js) не трогали, просто не вызываем.
+// Сам модуль (как и весь `ui`, см. interfaces.md) наружу ничего не
+// выставляет — это верхний уровень приложения.
 //
-// GAME_URL/STARS_AMOUNTS — открытые места спецификации, читаются из
-// переменных окружения через config.js (см. этот файл и api/config.js), а не
-// зашиты константой здесь.
+// GAME_URL — открытое место спецификации, читается из переменных окружения
+// через config.js (см. этот файл и api/config.js), а не зашито константой здесь.
 
 import { Board, BOARD_SIZE } from './game/board.js';
 import { generateShapeSet } from './game/shapes.js';
 import { Score } from './game/score.js';
 import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js';
-import { findHint, attachDragAndDrop } from './ui/input.js';
+import { attachDragAndDrop } from './ui/input.js';
 import { playAppear, playShake, playLineClear, createComboPreview } from './ui/animations.js';
 import { createPersistence } from './game/persistence.js';
 import { createTelegramBridge } from './telegram/bridge.js';
@@ -23,16 +24,7 @@ import { createI18n } from './i18n/index.js';
 import { createChallenges } from './game/challenges.js';
 import { createGameOverScreen } from './ui/gameover.js';
 import { createSoundEngine } from './ui/sound.js';
-import { createDonateFlow } from './ui/donate.js';
 import { loadConfig } from './config.js';
-
-// Тексты, которых нет в словаре i18n/index.js (модуль не в зоне этого
-// тикета — не расширяем его словарь, а держим здесь маленькую локальную
-// добавку для двух-трёх строк вне основной разметки, см. CONCERNS в отчёте).
-const EXTRA_TEXT = {
-  ru: { donateError: 'Не получилось создать счёт для доната. Попробуйте позже.' },
-  en: { donateError: 'Could not create a donation invoice. Please try again later.' },
-};
 
 // ---------- элементы DOM ----------
 const boardCanvas = document.getElementById('board-canvas');
@@ -52,14 +44,10 @@ const scoreValueEl = document.getElementById('score-value');
 const comboValueEl = document.getElementById('combo-value');
 const highScoreLabelEl = document.getElementById('high-score-label');
 const highScoreValueEl = document.getElementById('high-score-value');
-const hintBtn = document.getElementById('hint-btn');
 const languageBtn = document.getElementById('language-btn');
 const soundSlot = document.getElementById('sound-toggle-slot');
-const statusLine = document.getElementById('status-line');
 const challengeLabelEl = document.getElementById('challenge-label');
 const challengeProgressEl = document.getElementById('challenge-progress');
-const donatePanel = document.getElementById('donate-panel');
-const donateBtn = document.getElementById('donate-btn');
 const overlayRoot = document.getElementById('overlay-root');
 
 // ---- состояние партии (партия не сохраняется между запусками — spec §12) ----
@@ -72,7 +60,6 @@ let totalScore = 0;
 let highScore = 0;
 let cellSize = 0;
 let gameOver = false;
-let statusTimer = null;
 
 function currentTheme() {
   return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
@@ -111,12 +98,6 @@ function resize() {
   trayEls.forEach((el) => fitCanvasToCss(el, Math.round(el.clientWidth)));
   render();
   renderTray();
-}
-
-function showStatus(text, ms) {
-  statusLine.textContent = text;
-  if (statusTimer) clearTimeout(statusTimer);
-  if (ms) statusTimer = setTimeout(() => { statusLine.textContent = ''; }, ms);
 }
 
 async function main() {
@@ -158,8 +139,6 @@ async function main() {
   function applyTexts() {
     scoreLabelEl.textContent = i18n.t('score');
     highScoreLabelEl.textContent = i18n.t('highScore');
-    hintBtn.textContent = i18n.t('hint');
-    donateBtn.textContent = i18n.t('donate');
     languageBtn.textContent = i18n.getLanguage().toUpperCase();
     languageBtn.setAttribute('aria-label', i18n.t('language'));
     updateScoreUI(score.comboStreak ?? 0);
@@ -186,21 +165,6 @@ async function main() {
     renderChallenge(await challenges.reportProgress(event));
   }
 
-  // ---- донат через Telegram Stars (R43) ----
-  const donateFlow = createDonateFlow({
-    telegramBridge,
-    onError: () => showStatus(EXTRA_TEXT[i18n.getLanguage()]?.donateError ?? EXTRA_TEXT.ru.donateError, 4000),
-  });
-  // Номиналы — из окружения (config.js), а не из плейсхолдера ui/donate.js
-  // (тот пуст, пока пользователь не впишет реальные суммы — открытое место
-  // спецификации). Без номиналов кнопка доната скрывается, а не падает.
-  const amounts = config.starsAmounts;
-  donatePanel.hidden = amounts.length === 0;
-  donateBtn.addEventListener('click', () => {
-    if (amounts.length === 0) return;
-    donateFlow.donate(amounts[0]);
-  });
-
   // ---- экран Game Over (R21/R27) ----
   const gameOverScreen = createGameOverScreen({
     telegramBridge,
@@ -221,7 +185,6 @@ async function main() {
   }
 
   async function showGameOver() {
-    hintBtn.disabled = true;
     const state = await gameOverScreen.show(totalScore);
     if (state.highScore > highScore) {
       highScore = state.highScore;
@@ -351,20 +314,6 @@ async function main() {
     onInvalidDrop: () => invalidDrop(),
   });
 
-  hintBtn.addEventListener('click', () => {
-    if (gameOver) return;
-    const hint = findHint(board, shapes);
-    if (!hint) return;
-    const shape = shapes[hint.shapeIndex];
-    const highlight = shape.cells.map(([dr, dc]) => ({
-      row: hint.row + dr,
-      col: hint.col + dc,
-      valid: true,
-    }));
-    render(highlight);
-    setTimeout(() => render(), 1500);
-  });
-
   // ---- новая партия поверх той же сессии (без перезагрузки страницы) ----
   function resetGame() {
     board = new Board();
@@ -374,7 +323,6 @@ async function main() {
     colorGrid = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
     totalScore = 0;
     gameOver = false;
-    hintBtn.disabled = false;
     updateScoreUI(0);
     render();
     renderTray();

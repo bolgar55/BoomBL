@@ -27,7 +27,6 @@
       </div>
 
       <div id="top-actions">
-        <button id="hint-btn" type="button">Подсказка</button>
         <button id="language-btn" type="button" aria-label="Язык">RU</button>
         <!-- Кнопку-переключатель звука монтирует сам ui/sound.js
              (mountToggleButton) — здесь только слот-контейнер для неё. -->
@@ -60,13 +59,6 @@
       <canvas class="tray-slot" data-index="1"></canvas>
       <canvas class="tray-slot" data-index="2"></canvas>
     </footer>
-
-    <!-- Донат через Telegram Stars (R43). Скрыт по умолчанию — app.js
-         показывает кнопку, только если в окружении заданы STARS_AMOUNTS
-         (см. .env.example, config.js, api/config.js). -->
-    <div id="donate-panel" hidden>
-      <button id="donate-btn" type="button">Задонатить</button>
-    </div>
   </div>
 
   <!-- Контейнер для оверлея Game Over (ui/gameover.js строит DOM внутри
