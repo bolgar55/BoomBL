@@ -529,6 +529,11 @@ button:disabled {
   opacity: 0.55;
 }
 
+.achievement-item--pinned {
+  border-color: var(--ui-gradient-to);
+  box-shadow: 0 0 0 1px var(--ui-gradient-to), 0 4px 16px rgba(165, 94, 234, 0.25);
+}
+
 .achievement-icon {
   flex: 0 0 auto;
   width: 40px;
@@ -604,6 +609,25 @@ button:disabled {
   font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+.achievement-pin {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  font-size: 14px;
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.5;
+  filter: grayscale(1);
+}
+
+.achievement-pin--active {
+  opacity: 1;
+  filter: none;
+  background: rgba(165, 94, 234, 0.18);
 }
 
 /* ---------- Уведомление о новом достижении (R05.7) ----------

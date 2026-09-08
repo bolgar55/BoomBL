@@ -39,6 +39,9 @@ const DICTIONARIES = {
     achievementProgress: '{progress} / {goal}',
     close: 'Закрыть',
     newAchievement: 'Новое достижение!',
+    pinAchievement: 'Закрепить сверху',
+    unpinAchievement: 'Открепить',
+    noPinnedAchievement: 'Выбери достижение для отслеживания 🏆',
 
     'achievement.score-500.title': 'Первые очки',
     'achievement.score-500.desc': 'Набери 500 очков всего за всё время игры',
@@ -138,6 +141,9 @@ const DICTIONARIES = {
     achievementProgress: '{progress} / {goal}',
     close: 'Close',
     newAchievement: 'New achievement!',
+    pinAchievement: 'Pin to top',
+    unpinAchievement: 'Unpin',
+    noPinnedAchievement: 'Pick an achievement to track 🏆',
 
     'achievement.score-500.title': 'First points',
     'achievement.score-500.desc': 'Score 500 points in total, across all time',

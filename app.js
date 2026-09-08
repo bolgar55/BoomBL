@@ -199,21 +199,46 @@ async function main() {
     const next = i18n.getLanguage() === 'ru' ? 'en' : 'ru';
     await i18n.setLanguage(next);
     applyTexts();
-    renderChallenge(lastChallenge);
+    await renderTopPanel();
   });
 
-  // ---- ежедневный челлендж (R14) ----
+  // ---- верхняя панель под шапкой (R05.8) ----
+  // Раньше тут всегда был дневной челлендж — он общий на всех игроков и
+  // привязан к календарной дате, поэтому в рамках одной сессии выглядел
+  // «застывшим». Теперь приоритет у закреплённого игроком достижения (см.
+  // ui/achievements.js, кнопка-булавка 📌 в списке): пока что-то закреплено —
+  // показываем его живой прогресс; ничего не закреплено — прежнее поведение,
+  // дневной челлендж как раньше.
   let lastChallenge = null;
-  function renderChallenge(challenge) {
+
+  async function renderTopPanel() {
+    const pinned = await achievements.getPinned();
+    if (pinned) {
+      const isSecretLocked = pinned.tier === 'secret' && !pinned.unlocked;
+      challengeLabelEl.textContent = isSecretLocked ? '???' : i18n.t(`achievement.${pinned.id}.title`);
+      challengeProgressEl.textContent = pinned.unlocked
+        ? i18n.t('achievementUnlocked')
+        : i18n.t('achievementProgress', { progress: pinned.progress, goal: pinned.goal });
+      return;
+    }
+    if (lastChallenge) {
+      challengeLabelEl.textContent = i18n.t(`challenge.${lastChallenge.id}`, { goal: lastChallenge.goal });
+      challengeProgressEl.textContent = `${lastChallenge.progress}/${lastChallenge.goal}`;
+      return;
+    }
+    challengeLabelEl.textContent = i18n.t('noPinnedAchievement');
+    challengeProgressEl.textContent = '';
+  }
+
+  async function renderChallenge(challenge) {
     if (!challenge) return;
     lastChallenge = challenge;
-    challengeLabelEl.textContent = i18n.t(`challenge.${challenge.id}`, { goal: challenge.goal });
-    challengeProgressEl.textContent = `${challenge.progress}/${challenge.goal}`;
+    await renderTopPanel();
   }
-  renderChallenge(await challenges.getTodayChallenge());
+  await renderChallenge(await challenges.getTodayChallenge());
 
   async function reportGameEvent(event) {
-    renderChallenge(await challenges.reportProgress(event));
+    await renderChallenge(await challenges.reportProgress(event));
   }
 
   // ---- экран Game Over (R21/R27) ----
@@ -226,10 +251,15 @@ async function main() {
   });
 
   // ---- достижения (R05.7): постоянный прогресс + экран списка + тосты ----
+  // R05.8: закрепление достижения (📌 в списке) сразу обновляет верхнюю
+  // панель (onPinChange), не дожидаясь следующего хода.
   const achievementsScreen = createAchievementsScreen({
     container: overlayRoot,
     i18n,
     getAchievements: () => achievements.getAll(),
+    getPinnedId: async () => (await achievements.getPinned())?.id ?? null,
+    setPinned: (id) => achievements.setPinned(id),
+    onPinChange: () => renderTopPanel(),
   });
   achievementsBtn.addEventListener('click', () => achievementsScreen.show());
 
@@ -245,6 +275,9 @@ async function main() {
       showAchievementUnlock({ container: document.body, i18n, def });
       telegramBridge.haptic('lineClear'); // тот же «тяжёлый» impact, что и на очистке линии — разблокировка тоже событие-праздник
     }
+    // Живой прогресс закреплённого достижения в верхней панели (R05.8) —
+    // обновляем на каждое событие, не только на разблокировку.
+    await renderTopPanel();
   }
 
   // R19: очки не «прыгают» мгновенно, а плавно докручиваются от прежнего

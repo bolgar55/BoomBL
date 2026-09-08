@@ -93,6 +93,7 @@ export function createAchievements(deps = {}) {
     state = {
       metrics: { ...defaultMetrics(), ...(stored?.metrics ?? {}) },
       unlocked: stored?.unlocked ?? {},
+      pinned: stored?.pinned ?? null,
     };
     return state;
   }
@@ -140,21 +141,45 @@ export function createAchievements(deps = {}) {
     return newly;
   }
 
+  function toEntry(def) {
+    const entry = state.unlocked[def.id];
+    return {
+      ...def,
+      progress: Math.min(state.metrics[def.metric] ?? 0, def.goal),
+      unlocked: Boolean(entry),
+      unlockedAt: entry?.unlockedAt ?? null,
+    };
+  }
+
   /** Полный список достижений с текущим прогрессом/статусом — для экрана достижений. */
   async function getAll() {
     await load();
-    return ACHIEVEMENTS.map((def) => {
-      const entry = state.unlocked[def.id];
-      return {
-        ...def,
-        progress: Math.min(state.metrics[def.metric] ?? 0, def.goal),
-        unlocked: Boolean(entry),
-        unlockedAt: entry?.unlockedAt ?? null,
-      };
-    });
+    return ACHIEVEMENTS.map(toEntry);
   }
 
-  return { reportEvent, getAll };
+  /**
+   * Закреплённое игроком достижение (R05.8) — показывается в верхней панели
+   * вместо статичного дневного челленджа, если выбрано. id=null снимает
+   * закрепление. Закрепить можно любое достижение каталога, включая ещё не
+   * полученное (это и есть основной сценарий — следить за прогрессом) и
+   * секретное (тогда в панели тоже будет «???», как и в списке).
+   * @param {string|null} id
+   */
+  async function setPinned(id) {
+    await load();
+    state.pinned = id && ACHIEVEMENTS.some((def) => def.id === id) ? id : null;
+    await save();
+  }
+
+  /** Текущее закреплённое достижение с прогрессом, или null, если ничего не закреплено. */
+  async function getPinned() {
+    await load();
+    if (!state.pinned) return null;
+    const def = ACHIEVEMENTS.find((d) => d.id === state.pinned);
+    return def ? toEntry(def) : null;
+  }
+
+  return { reportEvent, getAll, setPinned, getPinned };
 }
 
 export { ACHIEVEMENTS };

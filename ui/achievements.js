@@ -19,12 +19,16 @@ const TIER_LABEL = {
  *   container: HTMLElement,
  *   i18n: { t: (key:string, params?:object) => string },
  *   getAchievements: () => Promise<Array<import('../game/achievements.js').AchievementDef & {progress:number, unlocked:boolean}>>,
+ *   getPinnedId: () => Promise<string|null>,
+ *   setPinned: (id: string|null) => Promise<void>,
+ *   onPinChange?: () => void,
  * }} deps
  * @returns {{ show(): Promise<void>, hide(): void }}
  */
-export function createAchievementsScreen({ container, i18n, getAchievements }) {
+export function createAchievementsScreen({ container, i18n, getAchievements, getPinnedId, setPinned, onPinChange }) {
   let overlay = null;
   let listEl = null;
+  let pinnedId = null;
 
   function ensureOverlay() {
     if (overlay) return overlay;
@@ -67,11 +71,20 @@ export function createAchievementsScreen({ container, i18n, getAchievements }) {
     return overlay;
   }
 
+  async function togglePin(id) {
+    const next = pinnedId === id ? null : id;
+    await setPinned(next);
+    pinnedId = next;
+    onPinChange?.();
+    await refresh();
+  }
+
   function renderItem(def) {
     const item = document.createElement('div');
     item.className = 'achievement-item';
     item.classList.add(def.unlocked ? 'achievement-item--unlocked' : 'achievement-item--locked');
     if (def.tier === 'secret' && !def.unlocked) item.classList.add('achievement-item--secret');
+    if (def.id === pinnedId) item.classList.add('achievement-item--pinned');
 
     const icon = document.createElement('div');
     icon.className = 'achievement-icon';
@@ -125,8 +138,21 @@ export function createAchievementsScreen({ container, i18n, getAchievements }) {
     body.appendChild(descEl);
     body.appendChild(progressWrap);
 
+    const pinBtn = document.createElement('button');
+    pinBtn.type = 'button';
+    pinBtn.className = 'achievement-pin';
+    pinBtn.classList.toggle('achievement-pin--active', def.id === pinnedId);
+    pinBtn.setAttribute('aria-label', i18n.t(def.id === pinnedId ? 'unpinAchievement' : 'pinAchievement'));
+    pinBtn.setAttribute('aria-pressed', String(def.id === pinnedId));
+    pinBtn.textContent = '📌';
+    pinBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      togglePin(def.id);
+    });
+
     item.appendChild(icon);
     item.appendChild(body);
+    item.appendChild(pinBtn);
     return item;
   }
 
@@ -134,10 +160,13 @@ export function createAchievementsScreen({ container, i18n, getAchievements }) {
     const el = ensureOverlay();
     el.querySelector('[data-role="title"]').textContent = i18n.t('achievements');
     listEl.innerHTML = '';
+    pinnedId = await getPinnedId();
     const all = await getAchievements();
-    // Разблокированные — сверху, дальше по прогрессу (кто ближе к цели —
-    // выше), секретные нераскрытые — в самом конце.
+    // Закреплённое — всегда первым (это и есть его смысл), затем
+    // разблокированные, дальше по прогрессу (кто ближе к цели — выше),
+    // секретные нераскрытые — в самом конце.
     const sorted = [...all].sort((a, b) => {
+      if (a.id === pinnedId || b.id === pinnedId) return a.id === pinnedId ? -1 : 1;
       if (a.unlocked !== b.unlocked) return a.unlocked ? -1 : 1;
       if (!a.unlocked && !b.unlocked) {
         const aSecret = a.tier === 'secret';
