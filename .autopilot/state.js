@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:\\Users\\user\\.claude\\skills\\autopilot",
   "startedAt": "2026-09-08T10:21:12+03:00",
-  "updatedAt": "2026-09-08T12:21:07+03:00",
+  "updatedAt": "2026-09-08T15:23:32+03:00",
   "finishedAt": null,
   "stages": [
     { "id": "preflight", "status": "done", "startedAt": "2026-09-08T10:21:12+03:00", "finishedAt": "2026-09-08T10:23:40+03:00" },
@@ -19,12 +19,12 @@ window.STATE =
     { "id": "briefing",  "status": "done", "startedAt": "2026-09-08T10:23:40+03:00", "finishedAt": "2026-09-08T10:36:15+03:00" },
     { "id": "spec",      "status": "done", "startedAt": "2026-09-08T10:36:15+03:00", "finishedAt": "2026-09-08T10:48:53+03:00" },
     { "id": "plan",      "status": "done", "startedAt": "2026-09-08T10:48:53+03:00", "finishedAt": "2026-09-08T10:54:23+03:00", "note": "7 тасков, ярус T2" },
-    { "id": "build",     "status": "active", "startedAt": "2026-09-08T10:54:23+03:00", "note": "6 из 7 готово, последний таск — интеграция" },
-    { "id": "review",    "status": "pending" },
-    { "id": "final",     "status": "pending" }
+    { "id": "build",     "status": "done", "startedAt": "2026-09-08T10:54:23+03:00", "finishedAt": "2026-09-08T15:23:32+03:00", "note": "7 из 7 тасков готово" },
+    { "id": "review",    "status": "done", "startedAt": "2026-09-08T10:55:42+03:00", "finishedAt": "2026-09-08T15:23:32+03:00", "note": "проверено 7 из 7" },
+    { "id": "final",     "status": "active", "startedAt": "2026-09-08T15:23:32+03:00" }
   ],
   "requirements": {
-    "total": 46, "done": 19, "inTicket": 21, "inSpec": 0,
+    "total": 46, "done": 40, "inTicket": 0, "inSpec": 0,
     "placeholder": 0, "deferred": 6, "dropped": 0
   },
   "tickets": [
@@ -80,11 +80,15 @@ window.STATE =
     { "id": "07", "title": "Интеграция, деплой и инструкция",
       "requirements": ["R34","R36","R38","R40","R41"],
       "blockedBy": ["04","05","06"], "wave": 4, "zone": ["app.js","vercel.json",".env.example","README-deploy.md"],
-      "status": "in-progress", "startedAt": "2026-09-08T12:21:07+03:00", "retries": 0, "repairs": 0, "handoffs": 0 }
+      "status": "done", "startedAt": "2026-09-08T12:21:07+03:00", "finishedAt": "2026-09-08T15:23:32+03:00",
+      "retries": 0, "repairs": 0, "handoffs": 0,
+      "files": ["app.js","config.js","config.test.js","api/config.js","api/telegram-webhook.js","index.html","style.css",".env.example","vercel.json","README-deploy.md"],
+      "tests": { "passed": 88, "failed": 0 }, "commit": "f176b6f/6d47b82",
+      "concerns": ["ui/donate.js экспортирует STARS_AMOUNTS, но app.js берёт номиналы через отдельный /api/config — константа осталась неиспользуемой, два источника правды", "app.js использует только первый настроенный номинал доната, остальные не показываются", "промежуточный git push/squash сделан пользователем самостоятельно (его репозиторий, его решение) — не действие сборки"] }
   ],
   "singlePass": null,
-  "tests": null,
-  "debt": { "placeholders": [], "assumptions": [], "emptyEnv": ["TELEGRAM_BOT_TOKEN", "GAME_URL", "STARS_AMOUNTS"] },
+  "tests": { "passed": 88, "failed": 0 },
+  "debt": { "placeholders": ["GAME_URL — узнается после деплоя", "STARS_AMOUNTS — номиналы доната, пользователь не называл"], "assumptions": [], "emptyEnv": ["GAME_URL", "STARS_AMOUNTS"] },
   "additions": [],
   "coverage": {
     "missing": 0,
@@ -100,8 +104,10 @@ window.STATE =
     "T03 telegram/bridge.js — onThemeChange добавлен сверх исходных Границ спецификации ради R22.1 (обоснованно, внесено в interfaces.md)",
     "T06 bot/bot-logic.js и api/create-invoice.js — вызов Telegram Bot API продублирован вместо общего хелпера",
     "T06 DEFAULT_GAME_URL продублирован как отдельная константа вместо переиспользования из telegram/bridge.js",
-    "T04 ui/gameover.js и ui/sound.js — тексты/метки зашиты на русском без шва для i18n, закрыть в T07",
-    "T04 ui/gameover.test.js и ui/sound.test.js — фейковый DOM продублирован вместо общего тестового хелпера"
+    "T04 ui/gameover.test.js и ui/sound.test.js — фейковый DOM продублирован вместо общего тестового хелпера",
+    "T07 ui/gameover.js — тексты внутри модуля (кнопка «Поделиться» и др.) так и остались зашиты на русском, i18n-шов не заведён; app.js подменяет отображаемый текст постфактум, но shareResult отправляет русский текст независимо от языка",
+    "T07 ui/donate.js экспортирует неиспользуемый STARS_AMOUNTS — номиналы реально идут через /api/config, два источника правды",
+    "T07 донат использует только первый настроенный номинал Stars, остальные не предлагаются пользователю"
   ],
   "reviewers": { "manifestSpec": "a6550598d12bbf793", "craft": "aa7d168dd3cb5cd34" },
   "blind": null

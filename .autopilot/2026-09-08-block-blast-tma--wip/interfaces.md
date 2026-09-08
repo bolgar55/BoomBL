@@ -71,6 +71,16 @@
 - `GAME_URL` — переиспользован плейсхолдер `[ВПИШИ-АДРЕС-ИГРЫ]` из `telegram/bridge.js`
 - **Открыто для таска 07:** `ui/donate.js` не подключён в `index.html` — кнопка доната и вызов `donate()` появляются там; `vercel.json` и деплой должны знать про `/api/create-invoice` и `/api/telegram-webhook`
 
+### Из таска 07 — интеграция, деплой и инструкция
+
+- `app.js` — единственная точка входа (`<script type="module" src="./app.js">`), связывает все модули 01–06 по их сигнатурам, ничего не экспортирует
+- `config.js` — `loadConfig(fetchImpl?) -> Promise<{gameUrl, starsAmounts}>` (запрашивает `/api/config`, кэширует, безопасный fallback при сбое), `resetConfigCacheForTests()`
+- `api/config.js` — `GET /api/config -> {gameUrl, starsAmounts}`, читает `process.env.GAME_URL`/`STARS_AMOUNTS` — так фронтенд (без доступа к process.env в браузере) узнаёт конфигурацию
+- `api/telegram-webhook.js` — точечно доправлен (1 строка): `createBotLogic({gameUrl: process.env.GAME_URL})`, чтобы GAME_URL реально приходил из окружения
+- `.env.example` — три строки: `TELEGRAM_BOT_TOKEN`, `GAME_URL`, `STARS_AMOUNTS`, все пустые
+- `README-deploy.md` — инструкция под Vercel + отдельная секция про GitHub Pages (только статика; донат/вебхук всё равно требуют serverless-хостинга)
+- **Известный разрыв, не блокирующий:** `ui/gameover.js` не имеет шва для i18n (тексты на русском внутри модуля); `app.js` подменяет отображаемый текст постфактум через DOM, но кнопка «Поделиться» внутри `gameover.js` всё ещё формирует `shareResult` на русском через `formatShareText`. Тексты ошибок доната (`donateError`) живут локальным RU/EN-словарём в `app.js`, а не в `i18n/index.js`. Если понадобится довести — это работа над `ui/gameover.js`/`i18n/index.js`, не над `app.js`
+
 ### Из таска 04 — экран Game Over и звук
 
 - `ui/gameover.js` — `isNewHighScore(score,prevHigh)->bool`, `computeGameOverState(score,prevHigh)->{score,highScore,isNewHighScore}`, `formatShareText(score,isNewHighScore)->string`, `formatResultText(...)->string`, `createGameOverScreen({telegramBridge,persistence,container?,document?,onRestart?,playGameOverSound?}) -> {show(score)->Promise<state>, hide()}`
