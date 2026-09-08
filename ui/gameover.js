@@ -44,7 +44,6 @@ export function computeGameOverState(score, previousHighScore) {
  *   container?: object,
  *   document?: object,
  *   onRestart?: () => void,
- *   playGameOverSound?: () => void,
  * }} deps
  */
 export function createGameOverScreen(deps) {
@@ -192,8 +191,6 @@ export function createGameOverScreen(deps) {
     if (state.isNewHighScore) {
       await persistence.setItem(HIGH_SCORE_KEY, state.highScore);
     }
-
-    deps.playGameOverSound?.();
 
     const el = ensureOverlay();
     if (el && els) {

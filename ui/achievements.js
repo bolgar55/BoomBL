@@ -71,12 +71,17 @@ export function createAchievementsScreen({ container, i18n, getAchievements, get
     return overlay;
   }
 
-  async function togglePin(id) {
+  // Не ждём setPinned() перед обновлением интерфейса — она сохраняет выбор
+  // через persistence, которая внутри Telegram уходит в CloudStorage (реальный
+  // сетевой запрос, иногда заметно медленный); UI обновляется сразу по
+  // локальному pinnedId, а сохранение продолжается в фоне (тот же фикс, что
+  // и для кнопки языка в app.js).
+  function togglePin(id) {
     const next = pinnedId === id ? null : id;
-    await setPinned(next);
     pinnedId = next;
+    setPinned(next);
     onPinChange?.();
-    await refresh();
+    refresh();
   }
 
   function renderItem(def) {

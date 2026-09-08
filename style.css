@@ -194,10 +194,16 @@ button {
   padding: 10px 16px;
   font-weight: 700;
   font-size: 14px;
+  /* Лёгкая «пружинка» на отжатии (transition работает в обе стороны: на
+     нажатии сжимается быстро, на отпускании чуть пружинит обратно за счёт
+     overshoot-кривой) — единая анимация нажатия для всех кнопок игры. */
+  transform: scale(1);
+  transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1), filter 120ms ease;
 }
 
 button:active {
-  filter: brightness(0.9);
+  transform: scale(0.92);
+  filter: brightness(0.88);
 }
 
 button:disabled {
@@ -545,20 +551,6 @@ button:disabled {
   pointer-events: none;
   user-select: none;
   z-index: 5;
-}
-
-/* ---------- Переключатель звука (R20) ----------
-   Кнопку создаёт ui/sound.js (mountToggleButton) внутри #sound-toggle-slot —
-   здесь только размер под тач-зону (R17) и внешний вид. */
-
-.sound-toggle {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 8px;
-  font-size: 18px;
-  line-height: 1;
-  background: var(--cell-empty);
-  color: var(--text);
 }
 
 /* ---------- Анимации (R19) ---------- */

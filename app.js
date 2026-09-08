@@ -36,7 +36,6 @@ import { createChallenges } from './game/challenges.js';
 import { createAchievements } from './game/achievements.js';
 import { createGameOverScreen } from './ui/gameover.js';
 import { createAchievementsScreen, showAchievementUnlock } from './ui/achievements.js';
-import { createSoundEngine } from './ui/sound.js';
 import { loadConfig } from './config.js';
 
 // Бонус за закрытие изолированного пробела (R05.4) — за клетку закрытого
@@ -83,7 +82,6 @@ const highScoreLabelEl = document.getElementById('high-score-label');
 const highScoreValueEl = document.getElementById('high-score-value');
 const achievementsBtn = document.getElementById('achievements-btn');
 const languageBtn = document.getElementById('language-btn');
-const soundSlot = document.getElementById('sound-toggle-slot');
 const challengeLabelEl = document.getElementById('challenge-label');
 const challengeProgressEl = document.getElementById('challenge-progress');
 const overlayRoot = document.getElementById('overlay-root');
@@ -187,14 +185,12 @@ async function main() {
   const i18n = createI18n({ persistence });
   const challenges = createChallenges({ persistence });
   const achievements = createAchievements({ persistence });
-  const soundEngine = createSoundEngine({ persistence });
 
   // Telegram SDK: ready()/expand() при старте (R02/R24/R25); вне Telegram —
   // безопасный no-op (R46i).
   telegramBridge.init();
 
   await i18n.init();
-  await soundEngine.init();
 
   // ---- тема: сигнал тёмная/светлая берём из Telegram, палитра — своя (§6) ----
   function applyTheme(scheme) {
@@ -218,9 +214,6 @@ async function main() {
   applySafeAreaTop();
   telegramBridge.onSafeAreaChange(applySafeAreaTop);
 
-  // ---- звук: переключатель монтируется в свой слот в шапке (R20) ----
-  soundEngine.mountToggleButton({ container: soundSlot });
-
   // ---- лучший результат (R12/R30) ----
   highScore = await persistence.getItem('highScore', 0);
   highScoreValueEl.textContent = String(highScore);
@@ -235,11 +228,18 @@ async function main() {
     updateScoreUI(score.comboStreak ?? 0);
   }
 
-  languageBtn.addEventListener('click', async () => {
+  languageBtn.addEventListener('click', () => {
+    // Смена языка (currentLanguage внутри i18n) происходит синхронно —
+    // persistence.setItem может уйти в Telegram CloudStorage (реальный
+    // сетевой запрос, иногда ощутимо медленный), поэтому специально НЕ ждём
+    // его здесь: интерфейс обновляется сразу, а сохранение выбора языка
+    // на сервере Telegram идёт в фоне (было: `await i18n.setLanguage(...)`
+    // перед applyTexts() — кнопка ощутимо «зависала» на время сетевого
+    // запроса, иногда пропуская нажатия целиком).
     const next = i18n.getLanguage() === 'ru' ? 'en' : 'ru';
-    await i18n.setLanguage(next);
+    i18n.setLanguage(next);
     applyTexts();
-    await renderTopPanel();
+    renderTopPanel();
   });
 
   // ---- верхняя панель под шапкой (R05.8) ----
@@ -290,7 +290,6 @@ async function main() {
     i18n,
     container: overlayRoot,
     onRestart: resetGame,
-    playGameOverSound: () => soundEngine.playGameOver(),
   });
 
   // ---- достижения (R05.7): постоянный прогресс + экран списка + тосты ----
@@ -415,7 +414,6 @@ async function main() {
     renderTray();
     render();
 
-    soundEngine.playClick();
     telegramBridge.haptic('placement');
 
     const linesCleared = clearedRows.length + clearedCols.length;
@@ -484,7 +482,6 @@ async function main() {
       // линий одновременно» и «большое комбо» выглядят мощнее не по флагу,
       // а по факту.
       fxEngine.add(createLineClearLayer(explodedCells, cellSize, { comboStreak, linesCleared }));
-      soundEngine.playLineClear();
       telegramBridge.haptic('lineClear');
     } else {
       // Обычная постановка без очистки линий — лёгкий тактильный импульс на
