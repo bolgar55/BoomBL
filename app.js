@@ -43,6 +43,12 @@ import { loadConfig } from './config.js';
 // пробела. Открытое число баланса — не задано спецификацией, подобрано так,
 // чтобы быть заметным на фоне обычных очков (1/клетку) и очистки линий (10×N²).
 const GAP_FILL_BONUS_PER_CELL = 10;
+// Бонус за полное удаление какого-то одного цвета с поля (R05.10) — за
+// клетку этого цвета, удалённую именно этим ходом. Считается для КАЖДОГО
+// цвета, который этим ходом исчез с поля целиком (был хоть где-то на поле
+// до хода — и нигде не остался после); если очистка убрала сразу несколько
+// цветов целиком (например, полная очистка всего поля), бонусы суммируются.
+const COLOR_CLEAR_BONUS_PER_CELL = 20;
 // Флэт-бонус за полную очистку поля («идеальный» ход, R06) — задан явно.
 const FULL_CLEAR_BONUS = 1500;
 // Короткая пауза (R06: «короткая пауза после очистки») между обычным
@@ -109,6 +115,25 @@ function currentTheme() {
 
 function render(highlight) {
   drawBoard(boardCtx, board, colorGrid, cellSize, currentTheme(), highlight);
+}
+
+/**
+ * Остаётся ли цвет ещё где-то на поле (R05.10, бонус за полное удаление
+ * цвета) — проверяет colorGrid, пропуская клетки из excludeKeys (набор
+ * "row,col", уже взорванные этим ходом, но ещё не обнулённые в colorGrid на
+ * момент вызова — вызывать ДО их обнуления).
+ * @param {string} cellColor
+ * @param {Set<string>} excludeKeys
+ * @returns {boolean}
+ */
+function colorRemainsOnBoard(cellColor, excludeKeys) {
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (excludeKeys.has(`${r},${c}`)) continue;
+      if (colorGrid[r][c] === cellColor) return true;
+    }
+  }
+  return false;
 }
 
 function renderTray() {
@@ -410,6 +435,8 @@ async function main() {
     const isBigShape = cellsPlaced >= 6;
 
     const gapBonus = isGapFill ? pocket.length * GAP_FILL_BONUS_PER_CELL : 0;
+    let colorClearBonus = 0;
+    const colorClearEvents = []; // { color, count, bonus, cx, cy } — по одному на каждый полностью удалённый цвет
 
     if (linesCleared > 0) {
       // сперва собираем клетки и их цвета (клетки на пересечении очищенной
@@ -429,6 +456,28 @@ async function main() {
       for (const c of clearedCols) {
         for (let r = 0; r < BOARD_SIZE; r++) addCell(r, c);
       }
+
+      // Бонус за полное удаление цвета с поля (R05.10) — считаем ДО обнуления
+      // colorGrid для explodedCells: для каждого встретившегося в этом взрыве
+      // цвета проверяем, остался ли он ГДЕ-ТО ЕЩЁ на поле вне взорванных
+      // клеток. Если нет — этот ход убрал цвет с поля целиком, бонус по
+      // числу клеток именно этого цвета, взорванных именно сейчас.
+      const explodedKeys = new Set(explodedCells.map(({ row: r, col: c }) => `${r},${c}`));
+      const colorCounts = new Map();
+      for (const { color: cellColor } of explodedCells) {
+        if (!cellColor) continue;
+        colorCounts.set(cellColor, (colorCounts.get(cellColor) ?? 0) + 1);
+      }
+      for (const [cellColor, count] of colorCounts) {
+        if (colorRemainsOnBoard(cellColor, explodedKeys)) continue;
+        const cellsOfColor = explodedCells.filter((e) => e.color === cellColor);
+        const cx = cellsOfColor.reduce((s, e) => s + e.col, 0) / cellsOfColor.length;
+        const cy = cellsOfColor.reduce((s, e) => s + e.row, 0) / cellsOfColor.length;
+        const bonus = count * COLOR_CLEAR_BONUS_PER_CELL;
+        colorClearBonus += bonus;
+        colorClearEvents.push({ color: cellColor, count, bonus, cx, cy });
+      }
+
       for (const { row: r, col: c } of explodedCells) {
         colorGrid[r][c] = null;
       }
@@ -458,7 +507,19 @@ async function main() {
       });
     }
 
-    totalScore += points + gapBonus;
+    // По одному попапу на каждый цвет, полностью удалённый этим ходом —
+    // тонированному в сам этот цвет (см. playBonusPopup), у своей области.
+    for (const event of colorClearEvents) {
+      playBonusPopup(bonusLayer, {
+        x: (event.cx + 0.5) * cellSize,
+        y: (event.cy + 0.5) * cellSize,
+        text: `+${event.bonus}`,
+        color: event.color,
+      });
+    }
+
+    const totalBonus = gapBonus + colorClearBonus;
+    totalScore += points + totalBonus;
     updateScoreUI(comboStreak);
 
     reportAchievements({
@@ -466,11 +527,12 @@ async function main() {
       totalLinesCleared: linesCleared,
       'max:maxLinesInOneMove': linesCleared,
       'max:maxComboStreak': comboStreak,
-      'max:maxSingleMoveScore': points + gapBonus,
+      'max:maxSingleMoveScore': points + totalBonus,
       'max:maxConsecutiveMoves': consecutiveMoves,
-      lifetimeScore: points + gapBonus,
+      lifetimeScore: points + totalBonus,
       'max:bestGameScore': totalScore,
       ...(gapBonus > 0 ? { totalGapBonuses: 1 } : {}),
+      ...(colorClearEvents.length > 0 ? { totalColorClears: colorClearEvents.length } : {}),
       ...(isBigShape ? { bigShapesPlaced: 1 } : {}),
       ...(isLastSlot ? { lastSlotPlacements: 1 } : {}),
       ...(linesCleared > 0 && wasStruggling ? { comebacks: 1 } : {}),
@@ -511,7 +573,7 @@ async function main() {
     }
 
     refillTrayIfEmpty();
-    reportGameEvent({ linesCleared, scoreDelta: points + gapBonus, comboStreak, shapesPlaced: 1, gameOver: false });
+    reportGameEvent({ linesCleared, scoreDelta: points + totalBonus, comboStreak, shapesPlaced: 1, gameOver: false });
     checkGameOver();
   }
 

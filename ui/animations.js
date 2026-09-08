@@ -389,12 +389,19 @@ export function animateScoreCountUp(el, from, to, duration = 500) {
  * @param {HTMLElement} container - позиционируемый контейнер (например, слой над полем)
  * @param {{x:number, y:number, text:string, big?:boolean}} opts - x/y в CSS-пикселях контейнера
  */
-export function playBonusPopup(container, { x, y, text, big = false }) {
+export function playBonusPopup(container, { x, y, text, big = false, color = null }) {
   const el = document.createElement('div');
   el.className = big ? 'bonus-popup bonus-popup--big' : 'bonus-popup';
   el.textContent = text;
   el.style.left = `${x}px`;
   el.style.top = `${y}px`;
+  // color — необязательная подсветка под конкретный повод (например, бонус
+  // за полное удаление цвета с поля тонируется в тот самый цвет, а не
+  // стандартным золотым) — переопределяет цвет текста и его свечение.
+  if (color) {
+    el.style.color = color;
+    el.style.textShadow = `0 2px 6px rgba(0, 0, 0, 0.55), 0 0 14px ${color}`;
+  }
   container.appendChild(el);
   el.addEventListener('animationend', () => el.remove(), { once: true });
 }

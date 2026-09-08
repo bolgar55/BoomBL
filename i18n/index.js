@@ -84,6 +84,10 @@ const DICTIONARIES = {
     'achievement.gap-bonus-1.desc': 'Получи бонус за закрытие пустого пробела',
     'achievement.gap-bonus-20.title': 'Охотник за пробелами',
     'achievement.gap-bonus-20.desc': 'Получи бонус за пробел 20 раз',
+    'achievement.color-clear-1.title': 'Чистый цвет',
+    'achievement.color-clear-1.desc': 'Убери какой-нибудь цвет с поля целиком одним ходом',
+    'achievement.color-clear-15.title': 'Радуга чистоты',
+    'achievement.color-clear-15.desc': 'Получи бонус за полное удаление цвета 15 раз',
 
     'achievement.shapes-100.title': 'Строитель',
     'achievement.shapes-100.desc': 'Поставь 100 фигур всего за всё время игры',
@@ -186,6 +190,10 @@ const DICTIONARIES = {
     'achievement.gap-bonus-1.desc': 'Earn a bonus for closing an enclosed gap',
     'achievement.gap-bonus-20.title': 'Gap hunter',
     'achievement.gap-bonus-20.desc': 'Earn the gap bonus 20 times',
+    'achievement.color-clear-1.title': 'Clean sweep',
+    'achievement.color-clear-1.desc': 'Clear an entire color off the board in one move',
+    'achievement.color-clear-15.title': 'Rainbow cleaner',
+    'achievement.color-clear-15.desc': 'Earn the color-clear bonus 15 times',
 
     'achievement.shapes-100.title': 'Builder',
     'achievement.shapes-100.desc': 'Place 100 shapes in total, across all time',

@@ -43,6 +43,8 @@ const ACHIEVEMENTS = [
   { id: 'full-clear-5', tier: 'epic', icon: '💫', metric: 'totalFullClears', goal: 5 },
   { id: 'gap-bonus-1', tier: 'common', icon: '🕳️', metric: 'totalGapBonuses', goal: 1 },
   { id: 'gap-bonus-20', tier: 'uncommon', icon: '🕳️', metric: 'totalGapBonuses', goal: 20 },
+  { id: 'color-clear-1', tier: 'uncommon', icon: '🎨', metric: 'totalColorClears', goal: 1 },
+  { id: 'color-clear-15', tier: 'rare', icon: '🌈', metric: 'totalColorClears', goal: 15 },
 
   // ---- объём игры ----
   { id: 'shapes-100', tier: 'common', icon: '🧩', metric: 'totalShapesPlaced', goal: 100 },
