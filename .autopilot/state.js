@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:\\Users\\user\\.claude\\skills\\autopilot",
   "startedAt": "2026-09-08T10:21:12+03:00",
-  "updatedAt": "2026-09-08T11:46:33+03:00",
+  "updatedAt": "2026-09-08T12:21:07+03:00",
   "finishedAt": null,
   "stages": [
     { "id": "preflight", "status": "done", "startedAt": "2026-09-08T10:21:12+03:00", "finishedAt": "2026-09-08T10:23:40+03:00" },
@@ -19,7 +19,7 @@ window.STATE =
     { "id": "briefing",  "status": "done", "startedAt": "2026-09-08T10:23:40+03:00", "finishedAt": "2026-09-08T10:36:15+03:00" },
     { "id": "spec",      "status": "done", "startedAt": "2026-09-08T10:36:15+03:00", "finishedAt": "2026-09-08T10:48:53+03:00" },
     { "id": "plan",      "status": "done", "startedAt": "2026-09-08T10:48:53+03:00", "finishedAt": "2026-09-08T10:54:23+03:00", "note": "7 тасков, ярус T2" },
-    { "id": "build",     "status": "active", "startedAt": "2026-09-08T10:54:23+03:00", "note": "5 из 7 готово, таск 04 на ревью" },
+    { "id": "build",     "status": "active", "startedAt": "2026-09-08T10:54:23+03:00", "note": "6 из 7 готово, последний таск — интеграция" },
     { "id": "review",    "status": "pending" },
     { "id": "final",     "status": "pending" }
   ],
@@ -57,10 +57,11 @@ window.STATE =
     { "id": "04", "title": "Экран Game Over и звук",
       "requirements": ["R20","R21","R27"],
       "blockedBy": ["02","03"], "wave": 3, "zone": ["ui/gameover.js","ui/sound.js","assets/sounds/"],
-      "status": "review", "startedAt": "2026-09-08T11:36:10+03:00",
+      "status": "done", "startedAt": "2026-09-08T11:36:10+03:00", "finishedAt": "2026-09-08T12:21:07+03:00",
       "retries": 0, "repairs": 0, "handoffs": 0,
       "files": ["ui/gameover.js","ui/gameover.test.js","ui/sound.js","ui/sound.test.js","assets/sounds/click.wav","assets/sounds/line-clear.wav","assets/sounds/game-over.wav"],
-      "tests": { "passed": 83, "failed": 0 } },
+      "tests": { "passed": 83, "failed": 0 }, "commit": "cce6339",
+      "concerns": ["ui/gameover.js и ui/sound.js — тексты/метки зашиты на русском без шва для i18n, нужно закрыть в таске 07", "ui/gameover.test.js и ui/sound.test.js — фейковый DOM продублирован в двух файлах вместо общего хелпера"] },
     { "id": "05", "title": "Языки и ежедневный челлендж",
       "requirements": ["R14","R14.1","R14.2","R44","R44.1"],
       "blockedBy": ["01","03"], "wave": 3, "zone": ["i18n/","game/challenges.js"],
@@ -79,7 +80,7 @@ window.STATE =
     { "id": "07", "title": "Интеграция, деплой и инструкция",
       "requirements": ["R34","R36","R38","R40","R41"],
       "blockedBy": ["04","05","06"], "wave": 4, "zone": ["app.js","vercel.json",".env.example","README-deploy.md"],
-      "status": "pending", "retries": 0, "repairs": 0, "handoffs": 0 }
+      "status": "in-progress", "startedAt": "2026-09-08T12:21:07+03:00", "retries": 0, "repairs": 0, "handoffs": 0 }
   ],
   "singlePass": null,
   "tests": null,
@@ -98,8 +99,10 @@ window.STATE =
     "T02 ui/render.js и ui/input.js — расчёт boundingBox фигуры продублирован вместо общей функции",
     "T03 telegram/bridge.js — onThemeChange добавлен сверх исходных Границ спецификации ради R22.1 (обоснованно, внесено в interfaces.md)",
     "T06 bot/bot-logic.js и api/create-invoice.js — вызов Telegram Bot API продублирован вместо общего хелпера",
-    "T06 DEFAULT_GAME_URL продублирован как отдельная константа вместо переиспользования из telegram/bridge.js"
+    "T06 DEFAULT_GAME_URL продублирован как отдельная константа вместо переиспользования из telegram/bridge.js",
+    "T04 ui/gameover.js и ui/sound.js — тексты/метки зашиты на русском без шва для i18n, закрыть в T07",
+    "T04 ui/gameover.test.js и ui/sound.test.js — фейковый DOM продублирован вместо общего тестового хелпера"
   ],
-  "reviewers": { "manifestSpec": "a193f582e8d35e37b", "craft": "aa7d168dd3cb5cd34" },
+  "reviewers": { "manifestSpec": "a6550598d12bbf793", "craft": "aa7d168dd3cb5cd34" },
   "blind": null
 }
