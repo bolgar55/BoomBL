@@ -72,13 +72,40 @@ export function shapeBounds(shape) {
   return { width: maxCol + 1, height: maxRow + 1 };
 }
 
+/** Клетка приподнимается над пальцем/курсором на столько клеток, чтобы игрок видел всю фигуру. */
+const LIFT_CELLS = 1.2;
+// Коэффициент сглаживания следования за курсором (0..1 за кадр) — чем выше,
+// тем «резче» отклик; 0.32 даёт плавное, но не «резиновое» следование.
+const FOLLOW_EASE = 0.32;
+const LAND_MS = 140; // анимация посадки в валидную позицию
+const RETURN_MS = 200; // анимация возврата в лоток при недопустимой позиции
+
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+/** Пересекает ли ограничивающий прямоугольник фигуры в (row, col) сетку поля хоть немного. */
+function overlapsBoard(row, col, bounds) {
+  return (
+    row + bounds.height > 0 &&
+    row < BOARD_SIZE &&
+    col + bounds.width > 0 &&
+    col < BOARD_SIZE
+  );
+}
+
 /**
  * Подключает drag-and-drop к слотам лотка и полю через Pointer Events.
+ * Перетаскиваемая фигура рисуется один раз в overlay-canvas (dragCanvas,
+ * position:fixed — см. style.css) и дальше просто двигается transform'ом:
+ * плавно следует за курсором/пальцем по всему экрану (не только над полем),
+ * а при отпускании либо красиво «влетает» в клетку поля, либо возвращается
+ * в лоток — обе анимации через requestAnimationFrame с ease-out.
  * DOM-обвязка — проверяется вручную при ревью, не юнит-тестами.
  *
  * @param {object} opts
  * @param {HTMLCanvasElement} opts.boardCanvas - канвас поля (для координат и размера)
- * @param {HTMLCanvasElement} opts.dragCanvas - overlay-канвас для «призрака» фигуры
+ * @param {HTMLCanvasElement} opts.dragCanvas - fixed-overlay канвас перетаскиваемой фигуры
  * @param {HTMLElement[]} opts.trayEls - канвасы слотов лотка (data-index = индекс фигуры)
  * @param {() => object} opts.getBoard - текущий Board
  * @param {() => (object|null)[]} opts.getShapes - текущие фигуры лотка (с цветами через getShapeColor)
@@ -104,50 +131,155 @@ export function attachDragAndDrop({
   onDrop,
   onInvalidDrop,
 }) {
-  const dragCtx = dragCanvas.getContext('2d');
+  const floatCanvas = dragCanvas;
+  const floatCtx = floatCanvas.getContext('2d');
   let dragging = null;
 
-  function boardRelativePoint(event) {
-    const rect = boardCanvas.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  function sizeFloatCanvas(cssWidth, cssHeight) {
+    const dpr = window.devicePixelRatio || 1;
+    floatCanvas.width = Math.max(1, Math.round(cssWidth * dpr));
+    floatCanvas.height = Math.max(1, Math.round(cssHeight * dpr));
+    floatCanvas.style.width = `${cssWidth}px`;
+    floatCanvas.style.height = `${cssHeight}px`;
+    floatCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function setFloatTransform(x, y, scale = 1) {
+    floatCanvas.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
+  }
+
+  function followTick() {
+    if (!dragging) return;
+    dragging.current.x += (dragging.target.x - dragging.current.x) * FOLLOW_EASE;
+    dragging.current.y += (dragging.target.y - dragging.current.y) * FOLLOW_EASE;
+    setFloatTransform(dragging.current.x, dragging.current.y);
+    dragging.rafId = requestAnimationFrame(followTick);
   }
 
   function updateDrag(event) {
     if (!dragging) return;
     const cellSize = getCellSize();
-    const { x, y } = boardRelativePoint(event);
-    const bounds = shapeBounds(dragging.shape);
+    const bounds = dragging.bounds;
+    const boardRect = boardCanvas.getBoundingClientRect();
+
     // якорь фигуры — под точкой касания, приподнят и отцентрован по ширине,
-    // чтобы палец не закрывал клетку постановки
+    // чтобы палец/курсор не закрывал клетку постановки и была видна вся фигура
+    const x = event.clientX - boardRect.left;
+    const y = event.clientY - boardRect.top;
     const anchorX = x - (bounds.width / 2) * cellSize;
-    const anchorY = y - (bounds.height / 2 + 1.2) * cellSize;
+    const anchorY = y - (bounds.height / 2 + LIFT_CELLS) * cellSize;
     const { row, col } = pixelToCell(anchorX, anchorY, cellSize);
     dragging.row = row;
     dragging.col = col;
 
     const board = getBoard();
     const valid = isValidDrop(board, dragging.shape, row, col);
+    dragging.valid = valid;
+    const overBoard = overlapsBoard(row, col, bounds);
 
-    dragCtx.clearRect(0, 0, dragCanvas.width, dragCanvas.height);
-    drawShapeGhost(dragCtx, dragging.shape, row, col, cellSize, dragging.color);
+    // рядом с полем фигура магнитится ровно в ту клетку, куда укажет
+    // подсветка (иначе плавающая фигура и подсветка визуально расходятся —
+    // подсветка всегда «прилипает» к границе клетки, а свободное следование
+    // за курсором — нет); вдали от поля — обычное свободное следование
+    if (overBoard) {
+      dragging.target.x = boardRect.left + col * cellSize;
+      dragging.target.y = boardRect.top + row * cellSize;
+    } else {
+      dragging.target.x = event.clientX - (bounds.width / 2) * cellSize;
+      dragging.target.y = event.clientY - (bounds.height / 2 + LIFT_CELLS) * cellSize;
+    }
+
+    if (dragging.first) {
+      dragging.current.x = dragging.target.x;
+      dragging.current.y = dragging.target.y;
+      setFloatTransform(dragging.current.x, dragging.current.y);
+      dragging.first = false;
+    }
+
+    floatCanvas.classList.toggle('drag-float--invalid', overBoard && !valid);
 
     onHover(shapeCells(dragging.shape, row, col).map((c) => ({ ...c, valid })));
   }
 
+  function resetFloat() {
+    floatCanvas.classList.remove('drag-float--invalid');
+    floatCanvas.style.display = 'none';
+    floatCanvas.style.transform = '';
+  }
+
+  function animateFloat(from, to, duration, onDone) {
+    const start = performance.now();
+    function step(now) {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = easeOutCubic(t);
+      setFloatTransform(
+        from.x + (to.x - from.x) * eased,
+        from.y + (to.y - from.y) * eased,
+        from.scale + (to.scale - from.scale) * eased
+      );
+      if (t < 1) {
+        requestAnimationFrame(step);
+      } else {
+        onDone();
+      }
+    }
+    requestAnimationFrame(step);
+  }
+
+  // Валидная позиция: фигура красиво «влетает» и встаёт вровень с клеткой
+  // поля, только после этого коммитим реальную постановку (onDrop) — без
+  // рывка между анимацией и отрисовкой уже размещённого блока на поле.
+  function landFloat(state) {
+    const cellSize = getCellSize();
+    const boardRect = boardCanvas.getBoundingClientRect();
+    const to = {
+      x: boardRect.left + state.col * cellSize,
+      y: boardRect.top + state.row * cellSize,
+      scale: 1,
+    };
+    floatCanvas.classList.remove('drag-float--invalid');
+    animateFloat({ ...state.current, scale: 1 }, to, LAND_MS, () => {
+      resetFloat();
+      onDrop(state.shapeIndex, state.row, state.col);
+    });
+  }
+
+  // Недопустимая позиция (или отмена драга): фигура плавно возвращается и
+  // уменьшается до размера своего слота в лотке, слот восстанавливает
+  // непрозрачность ровно к моменту, когда фигура «садится» на место.
+  function returnFloat(state) {
+    const slotRect = state.el.getBoundingClientRect();
+    const cellSize = getCellSize();
+    const shapePxW = state.bounds.width * cellSize;
+    const shapePxH = state.bounds.height * cellSize;
+    const fitSize = Math.min(slotRect.width, slotRect.height) * 0.72;
+    const scale = fitSize / Math.max(shapePxW, shapePxH, 1);
+    const to = {
+      x: slotRect.left + slotRect.width / 2 - (shapePxW * scale) / 2,
+      y: slotRect.top + slotRect.height / 2 - (shapePxH * scale) / 2,
+      scale,
+    };
+    animateFloat({ ...state.current, scale: 1 }, to, RETURN_MS, () => {
+      resetFloat();
+      state.el.classList.remove('tray-slot--dragging');
+    });
+  }
+
   function finishDrag(commit) {
     if (!dragging) return;
-    const { shapeIndex, shape, row, col, el } = dragging;
-    el.classList.remove('tray-slot--dragging');
-    dragCtx.clearRect(0, 0, dragCanvas.width, dragCanvas.height);
+    const state = dragging;
     dragging = null;
+    cancelAnimationFrame(state.rafId);
     onHoverEnd();
 
-    if (!commit) return;
     const board = getBoard();
-    if (isValidDrop(board, shape, row, col)) {
-      onDrop(shapeIndex, row, col);
+    const valid = commit && isValidDrop(board, state.shape, state.row, state.col);
+
+    if (valid) {
+      landFloat(state);
     } else {
-      onInvalidDrop(shapeIndex);
+      returnFloat(state);
+      if (commit) onInvalidDrop(state.shapeIndex);
     }
   }
 
@@ -159,17 +291,32 @@ export function attachDragAndDrop({
       const shape = shapes[shapeIndex];
       if (!shape) return;
       el.setPointerCapture(event.pointerId);
+
+      const cellSize = getCellSize();
+      const bounds = shapeBounds(shape);
+      const color = getShapeColor(shapeIndex);
+
+      sizeFloatCanvas(bounds.width * cellSize, bounds.height * cellSize);
+      drawShapeGhost(floatCtx, shape, 0, 0, cellSize, color);
+      floatCanvas.style.display = 'block';
+
       dragging = {
         pointerId: event.pointerId,
         shapeIndex,
         shape,
-        color: getShapeColor(shapeIndex),
+        bounds,
         el,
         row: null,
         col: null,
+        valid: false,
+        target: { x: 0, y: 0 },
+        current: { x: 0, y: 0 },
+        rafId: null,
+        first: true,
       };
       el.classList.add('tray-slot--dragging');
       updateDrag(event);
+      dragging.rafId = requestAnimationFrame(followTick);
       event.preventDefault();
     });
   });

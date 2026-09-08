@@ -45,8 +45,13 @@
     <main id="board-wrap">
       <canvas id="board-canvas"></canvas>
       <canvas id="effects-canvas" aria-hidden="true"></canvas>
-      <canvas id="drag-ghost" aria-hidden="true"></canvas>
     </main>
+
+    <!-- Плавающий canvas перетаскиваемой фигуры (R05): position:fixed
+         относительно viewport, поэтому не обрезается overflow:hidden
+         у #board-wrap и видна над всем экраном, а не только над полем.
+         Размер/содержимое задаёт ui/input.js на каждый drag. -->
+    <canvas id="drag-float" class="drag-float" aria-hidden="true"></canvas>
 
     <p id="status-line"></p>
 

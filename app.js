@@ -39,7 +39,7 @@ const boardCanvas = document.getElementById('board-canvas');
 const boardCtx = boardCanvas.getContext('2d');
 const effectsCanvas = document.getElementById('effects-canvas');
 const effectsCtx = effectsCanvas.getContext('2d');
-const dragCanvas = document.getElementById('drag-ghost');
+const dragCanvas = document.getElementById('drag-float');
 const boardWrap = document.getElementById('board-wrap');
 const trayEls = Array.from(document.querySelectorAll('.tray-slot'));
 const scoreLabelEl = document.getElementById('score-label');
@@ -99,7 +99,7 @@ function fitCanvasToCss(canvas, cssSize) {
 
 function resize() {
   const size = Math.round(boardWrap.clientWidth);
-  for (const canvas of [boardCanvas, effectsCanvas, dragCanvas]) {
+  for (const canvas of [boardCanvas, effectsCanvas]) {
     fitCanvasToCss(canvas, size);
   }
   cellSize = computeCellSize(size);
