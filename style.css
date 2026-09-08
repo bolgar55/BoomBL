@@ -57,16 +57,22 @@ body {
 
 /* ---------- Верхняя панель: очки + подсказка ---------- */
 
+/* Ряды шапки зафиксированы явно (flex-basis:100% у #top-actions ниже
+   принудительно переносит его на вторую строку) вместо того, чтобы полагаться
+   на flex-wrap подбирать перенос по ширине контента: иначе рост числа очков
+   (больше разрядов) или другие изменения текста могли неожиданно перекинуть
+   элементы в новую строку — шапка «съезжала» в случайный момент. Так расклад
+   всегда одинаковый: очки/рекорд сверху, кнопки снизу. */
 #top-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
   min-height: 44px;
 }
 
 #score-panel {
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -84,9 +90,20 @@ body {
   font-size: 28px;
   font-weight: 800;
   line-height: 1;
+  /* цифры одинаковой ширины — рост числа очков не «гуляет» по ширине символов */
+  font-variant-numeric: tabular-nums;
 }
 
+/* position:absolute — комбо появляется/исчезает по ходу игры, но не должно
+   сдвигать соседние элементы шапки (кнопки, лучший результат): без этого
+   #top-bar (flex-wrap: wrap) мог переносить строку при каждом появлении
+   комбо, из-за чего вся шапка «съезжала». */
 #combo-value {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 2px;
+  white-space: nowrap;
   color: var(--score-color);
   font-size: 14px;
   font-weight: 700;
@@ -99,6 +116,7 @@ body {
   align-items: baseline;
   gap: 6px;
   min-width: 0;
+  margin-left: auto; /* прижат к правому краю первой строки шапки */
   color: var(--text-muted);
   font-size: 13px;
 }
@@ -106,6 +124,7 @@ body {
 #high-score-value {
   color: var(--text);
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Действия шапки: подсказка, язык, звук ---------- */
@@ -113,7 +132,9 @@ body {
 #top-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+  flex-basis: 100%; /* всегда своя строка — см. комментарий у #top-bar */
 }
 
 #language-btn {
