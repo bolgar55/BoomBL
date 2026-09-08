@@ -177,17 +177,12 @@ export function attachDragAndDrop({
     dragging.valid = valid;
     const overBoard = overlapsBoard(row, col, bounds);
 
-    // рядом с полем фигура магнитится ровно в ту клетку, куда укажет
-    // подсветка (иначе плавающая фигура и подсветка визуально расходятся —
-    // подсветка всегда «прилипает» к границе клетки, а свободное следование
-    // за курсором — нет); вдали от поля — обычное свободное следование
-    if (overBoard) {
-      dragging.target.x = boardRect.left + col * cellSize;
-      dragging.target.y = boardRect.top + row * cellSize;
-    } else {
-      dragging.target.x = event.clientX - (bounds.width / 2) * cellSize;
-      dragging.target.y = event.clientY - (bounds.height / 2 + LIFT_CELLS) * cellSize;
-    }
+    // фигура всегда свободно следует за курсором/пальцем — привязку к сетке
+    // видно только по подсветке клеток (onHover ниже) и в анимации при
+    // отпускании (landFloat); магнитный «прыжок» самой фигуры при переходе
+    // между клетками ощущался как рывок, поэтому её тут нет
+    dragging.target.x = event.clientX - (bounds.width / 2) * cellSize;
+    dragging.target.y = event.clientY - (bounds.height / 2 + LIFT_CELLS) * cellSize;
 
     if (dragging.first) {
       dragging.current.x = dragging.target.x;
