@@ -17,7 +17,18 @@ import { generateShapeSet } from './game/shapes.js';
 import { Score } from './game/score.js';
 import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js';
 import { attachDragAndDrop } from './ui/input.js';
-import { playAppear, playShake, playLineClear, createComboPreview } from './ui/animations.js';
+import {
+  playAppear,
+  playShake,
+  createComboPreview,
+  createEffectsEngine,
+  createLineClearLayer,
+  createPlacementPulseLayer,
+  createInvalidPulseLayer,
+  createFullClearBurstLayer,
+  animateScoreCountUp,
+  playBonusPopup,
+} from './ui/animations.js';
 import { createPersistence } from './game/persistence.js';
 import { createTelegramBridge } from './telegram/bridge.js';
 import { createI18n } from './i18n/index.js';
@@ -26,18 +37,32 @@ import { createGameOverScreen } from './ui/gameover.js';
 import { createSoundEngine } from './ui/sound.js';
 import { loadConfig } from './config.js';
 
+// Бонус за закрытие изолированного пробела (R05.4) — за клетку закрытого
+// пробела, и флэт-бонус за полную очистку поля («идеальный» ход). Открытые
+// числа баланса — не заданы спецификацией, подобраны так, чтобы быть
+// заметными на фоне обычных очков (1/клетку) и очистки линий (10×N²).
+const GAP_FILL_BONUS_PER_CELL = 10;
+const FULL_CLEAR_BONUS = 100;
+
 // ---------- элементы DOM ----------
 const boardCanvas = document.getElementById('board-canvas');
 const boardCtx = boardCanvas.getContext('2d');
 const effectsCanvas = document.getElementById('effects-canvas');
 const effectsCtx = effectsCanvas.getContext('2d');
 // Превью потенциального комбо при перетаскивании (R05.3) делит этот же
-// overlay-канвас со взрывом очищенных линий (playLineClear) — они не
+// overlay-канвас с движком остальных эффектов (fxEngine) — они не
 // пересекаются во времени: превью гаснет в onHoverEnd раньше, чем commit
 // доходит до анимации взрыва после реальной постановки.
 const comboPreview = createComboPreview(effectsCtx);
+// Движок остальных canvas-эффектов (R19): взрыв линии, импульс размещения,
+// вспышка при недопустимом ходе, фейерверк полной очистки — могут идти
+// одновременно на одном канвасе, поэтому не self-driven функции, а слои
+// в общем движке (см. ui/animations.js, createEffectsEngine).
+const fxEngine = createEffectsEngine(effectsCtx);
 const dragCanvas = document.getElementById('drag-float');
 const boardWrap = document.getElementById('board-wrap');
+// Слой всплывающих "+N" за бонус (R19) — над полем, внутри board-wrap.
+const bonusLayer = document.getElementById('bonus-layer');
 const trayEls = Array.from(document.querySelectorAll('.tray-slot'));
 const scoreLabelEl = document.getElementById('score-label');
 const scoreValueEl = document.getElementById('score-value');
@@ -57,6 +82,7 @@ let shapes = generateShapeSet();
 let shapeColors = shapes.map(() => randomBlockColor());
 let colorGrid = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
 let totalScore = 0;
+let displayedScore = 0; // то, что реально показано в scoreValueEl прямо сейчас (см. updateScoreUI)
 let highScore = 0;
 let cellSize = 0;
 let gameOver = false;
@@ -182,7 +208,11 @@ async function main() {
   });
 
   function updateScoreUI(comboStreak) {
-    scoreValueEl.textContent = String(totalScore);
+    // R19: очки не «прыгают» мгновенно, а плавно докручиваются от прежнего
+    // значения к новому (animateScoreCountUp сама не делает ничего, если
+    // from===to — например, сразу после resetGame).
+    animateScoreCountUp(scoreValueEl, displayedScore, totalScore);
+    displayedScore = totalScore;
     if (comboStreak > 0) {
       comboValueEl.hidden = false;
       comboValueEl.textContent = i18n.t('combo', { goal: comboStreak });
@@ -246,6 +276,13 @@ async function main() {
     const color = shapeColors[shapeIndex];
     const cellsPlaced = shape.cells.length;
 
+    // Бонус за закрытие пробела (R05.4) — считаем ДО place(), пока поле ещё
+    // в состоянии «как было»: findEnclosedPocket смотрит, была ли область
+    // пустых клеток вокруг фигуры изолированной и в точности её размера
+    // (иначе это просто ход в открытое место, без бонуса).
+    const pocket = board.findEnclosedPocket(shape, row, col);
+    const isGapFill = pocket.length === shape.cells.length;
+
     const { clearedRows, clearedCols } = board.place(shape, row, col);
     for (const [dr, dc] of shape.cells) {
       colorGrid[row + dr][col + dc] = color;
@@ -260,7 +297,8 @@ async function main() {
 
     const linesCleared = clearedRows.length + clearedCols.length;
     const { points, comboStreak } = score.addMove({ cellsPlaced, linesCleared });
-    totalScore += points;
+
+    let bonus = isGapFill ? pocket.length * GAP_FILL_BONUS_PER_CELL : 0;
 
     if (linesCleared > 0) {
       // сперва собираем клетки и их цвета (клетки на пересечении очищенной
@@ -284,19 +322,52 @@ async function main() {
         colorGrid[r][c] = null;
       }
       render();
-      playLineClear(effectsCtx, explodedCells, cellSize, comboStreak > 1, () => {});
+      // R19: интенсивность (число осколков, вторая волна) сама растёт с
+      // числом одновременно очищенных линий и серией комбо — «несколько
+      // линий одновременно» и «большое комбо» выглядят мощнее не по флагу,
+      // а по факту.
+      fxEngine.add(createLineClearLayer(explodedCells, cellSize, { comboStreak, linesCleared }));
       soundEngine.playLineClear();
       telegramBridge.haptic('lineClear');
+    } else {
+      // Обычная постановка без очистки линий — лёгкий тактильный импульс на
+      // клетках фигуры (R19, «установка фигуры»/«успешное размещение»),
+      // отдельный от более мощного взрыва при очистке.
+      const placedCells = shape.cells.map(([dr, dc]) => ({ row: row + dr, col: col + dc }));
+      fxEngine.add(createPlacementPulseLayer(placedCells, cellSize, color));
     }
+
+    // Полная очистка поля (R19, «очистка всего поля») — самый мощный
+    // визуальный отклик в игре, плюс отдельный флэт-бонус («идеальный» ход).
+    const isFullClear = linesCleared > 0 && board.isEmpty();
+    if (isFullClear) {
+      bonus += FULL_CLEAR_BONUS;
+      fxEngine.add(createFullClearBurstLayer(cellSize, BOARD_SIZE));
+    }
+
+    if (bonus > 0) {
+      const targetCells = isFullClear ? [{ row: (BOARD_SIZE - 1) / 2, col: (BOARD_SIZE - 1) / 2 }] : pocket;
+      const cx = targetCells.reduce((s, c) => s + c.col, 0) / targetCells.length;
+      const cy = targetCells.reduce((s, c) => s + c.row, 0) / targetCells.length;
+      playBonusPopup(bonusLayer, {
+        x: (cx + 0.5) * cellSize,
+        y: (cy + 0.5) * cellSize,
+        text: isFullClear ? `${i18n.t('perfectClear')} +${bonus}` : `+${bonus}`,
+        big: isFullClear,
+      });
+    }
+
+    totalScore += points + bonus;
 
     updateScoreUI(comboStreak);
     refillTrayIfEmpty();
-    reportGameEvent({ linesCleared, scoreDelta: points, comboStreak, shapesPlaced: 1, gameOver: false });
+    reportGameEvent({ linesCleared, scoreDelta: points + bonus, comboStreak, shapesPlaced: 1, gameOver: false });
     checkGameOver();
   }
 
   function invalidDrop() {
     playShake(boardWrap);
+    fxEngine.add(createInvalidPulseLayer(cellSize, BOARD_SIZE));
     telegramBridge.haptic('invalidPlacement');
   }
 
@@ -329,6 +400,10 @@ async function main() {
     shapeColors = shapes.map(() => randomBlockColor());
     colorGrid = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
     totalScore = 0;
+    // Сброс счёта — сразу, без анимации отсчёта вниз (animateScoreCountUp
+    // внутри updateScoreUI ничего не делает при from===to).
+    displayedScore = 0;
+    scoreValueEl.textContent = '0';
     gameOver = false;
     updateScoreUI(0);
     render();

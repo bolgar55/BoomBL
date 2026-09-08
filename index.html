@@ -44,6 +44,9 @@
     <main id="board-wrap">
       <canvas id="board-canvas"></canvas>
       <canvas id="effects-canvas" aria-hidden="true"></canvas>
+      <!-- Всплывающий "+N" за бонус (R19) — узлы создаёт/удаляет
+           ui/animations.js (playBonusPopup), см. style.css .bonus-popup. -->
+      <div id="bonus-layer" aria-hidden="true"></div>
     </main>
 
     <!-- Плавающий canvas перетаскиваемой фигуры (R05): position:fixed

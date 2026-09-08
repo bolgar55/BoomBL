@@ -163,6 +163,47 @@ export class Board {
     }
     return false;
   }
+
+  /**
+   * Заливка (4-связность) изолированной пустой области поля, содержащей
+   * клетки фигуры в позиции (row, col) — не трогает состояние поля, вызывать
+   * до place(). Используется бонусом за закрытие пробела: если размер этой
+   * области в точности равен числу клеток фигуры, значит фигура целиком
+   * закрыла изолированный пробел (а не просто легла в открытое место — тогда
+   * область захватила бы куда больше пустых клеток вокруг). Стартует с
+   * первой клетки самой фигуры — canPlace уже гарантирует, что она пуста;
+   * на недопустимой позиции возвращает пустой массив.
+   * @param {{cells: number[][]}} shape
+   * @param {number} row
+   * @param {number} col
+   * @returns {{row:number, col:number}[]}
+   */
+  findEnclosedPocket(shape, row, col) {
+    if (!this.canPlace(shape, row, col)) return [];
+
+    const [seedDr, seedDc] = shape.cells[0];
+    const stack = [[row + seedDr, col + seedDc]];
+    const seen = new Set();
+    const pocket = [];
+
+    while (stack.length) {
+      const [r, c] = stack.pop();
+      if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) continue;
+      const key = `${r},${c}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (this.grid[r][c]) continue; // занятая клетка — граница пробела
+      pocket.push({ row: r, col: c });
+      stack.push([r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]);
+    }
+
+    return pocket;
+  }
+
+  /** Полностью ли пусто поле — используется бонусом за полную очистку. */
+  isEmpty() {
+    return this.grid.every((row) => row.every((cell) => !cell));
+  }
 }
 
 export const BOARD_SIZE = SIZE;
