@@ -15,6 +15,7 @@
 import { Board, BOARD_SIZE, hasAnyValidMove } from './game/board.js';
 import { generateShapeSet, resetWaveRhythm } from './game/shapes.js';
 import { Score } from './game/score.js';
+import { createEventDirector } from './game/events.js';
 import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js';
 import { attachDragAndDrop, isValidDrop } from './ui/input.js';
 import {
@@ -35,7 +36,7 @@ import { createI18n } from './i18n/index.js';
 import { createChallenges } from './game/challenges.js';
 import { createAchievements } from './game/achievements.js';
 import { createGameOverScreen } from './ui/gameover.js';
-import { createAchievementsScreen, showAchievementUnlock } from './ui/achievements.js';
+import { createAchievementsScreen, showAchievementUnlock, showEventToast } from './ui/achievements.js';
 import { loadConfig } from './config.js';
 
 // Бонус за закрытие изолированного пробела (R05.4) — за клетку закрытого
@@ -54,6 +55,14 @@ const FULL_CLEAR_BONUS = 1500;
 // взрывом очищенной линии и большим праздничным откликом полной очистки —
 // иначе оба эффекта стартуют в один и тот же кадр и сливаются в один.
 const FULL_CLEAR_PAUSE_MS = 280;
+
+// Иконки временных ивентов партии (game/events.js) — для тоста-анонса и
+// верхней панели, пока ивент активен.
+const EVENT_ICONS = {
+  doublePoints: '⚡',
+  bigShapeRain: '🧱',
+  colorBonusRush: '🎨',
+};
 
 // ---------- элементы DOM ----------
 const boardCanvas = document.getElementById('board-canvas');
@@ -82,6 +91,7 @@ const highScoreLabelEl = document.getElementById('high-score-label');
 const highScoreValueEl = document.getElementById('high-score-value');
 const achievementsBtn = document.getElementById('achievements-btn');
 const languageBtn = document.getElementById('language-btn');
+const challengePanelEl = document.getElementById('challenge-panel');
 const challengeLabelEl = document.getElementById('challenge-label');
 const challengeProgressEl = document.getElementById('challenge-progress');
 const overlayRoot = document.getElementById('overlay-root');
@@ -89,6 +99,9 @@ const overlayRoot = document.getElementById('overlay-root');
 // ---- состояние партии (партия не сохраняется между запусками — spec §12) ----
 let board = new Board();
 let score = new Score();
+// Лёгкий ивент на текущую партию (game/events.js) — раз за партию, в
+// случайный момент, см. placeShape()/resetGame().
+let eventDirector = createEventDirector();
 let shapes = generateShapeSet(board);
 let shapeColors = shapes.map(() => randomBlockColor());
 let colorGrid = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
@@ -253,7 +266,20 @@ async function main() {
   // как запасной вариант на случай, если вообще всё уже получено.
   let lastChallenge = null;
 
+  // Пока активен временный ивент партии (game/events.js) — он занимает эту
+  // же панель поверх ачивки/челленджа (R «ивент виден через подсказку»):
+  // выше приоритетом, потому что он временный и требует внимания игрока
+  // прямо сейчас, в отличие от «фонового» прогресса достижений.
   async function renderTopPanel() {
+    const activeEvent = eventDirector.getActive();
+    if (activeEvent) {
+      challengePanelEl.classList.add('challenge-panel--event');
+      challengeLabelEl.textContent = `${EVENT_ICONS[activeEvent.type]} ${i18n.t(`event.${activeEvent.type}.title`)}`;
+      challengeProgressEl.textContent = i18n.t('eventMovesLeft', { goal: activeEvent.movesRemaining });
+      return;
+    }
+    challengePanelEl.classList.remove('challenge-panel--event');
+
     const displayed = await achievements.getDisplayed();
     if (displayed) {
       const isSecretLocked = displayed.tier === 'secret' && !displayed.unlocked;
@@ -374,7 +400,11 @@ async function main() {
       reportAchievements({ traySetsUsed: 1 });
       // «Умная» генерация (R05.5) смотрит на текущее поле и на то, как давно
       // не было очистки линии — see game/shapes.js pickForBoard.
-      shapes = generateShapeSet(board, { movesSinceClear });
+      // bigShapeRainActive — ивент партии (game/events.js), если активен.
+      shapes = generateShapeSet(board, {
+        movesSinceClear,
+        bigShapeRainActive: eventDirector.isBigShapeRainActive(),
+      });
       shapeColors = shapes.map(() => randomBlockColor());
       renderTray();
       playAppear(trayEls);
@@ -417,7 +447,18 @@ async function main() {
     telegramBridge.haptic('placement');
 
     const linesCleared = clearedRows.length + clearedCols.length;
-    const { points, comboStreak } = score.addMove({ cellsPlaced, linesCleared });
+    const { points: rawPoints, comboStreak } = score.addMove({ cellsPlaced, linesCleared });
+    // Множители текущего ивента (game/events.js) читаем ДО onShapePlaced()
+    // ниже — тот может сам запустить/закончить ивент прямо этим ходом, а
+    // эффект должен подействовать только на ходы ПОСЛЕ анонса, не на тот, что
+    // его вызвал (иначе получилось бы, что игрок не видел тоста, а бонус уже
+    // задним числом применился к уже посчитанному ходу).
+    const scoreMultiplier = eventDirector.getScoreMultiplier();
+    const colorBonusMultiplier = eventDirector.getColorBonusMultiplier();
+    // Ивент «двойные очки» умножает именно здесь, один раз — все дальнейшие
+    // использования points (totalScore, достижения, попап) читают уже
+    // готовое, удвоенное значение, повторно не домножая.
+    const points = rawPoints * scoreMultiplier;
     linesClearedThisGame += linesCleared;
     bestComboThisGame = Math.max(bestComboThisGame, comboStreak);
     // Захватываем ДО обновления movesSinceClear — «камбэк» (R05.7) считает
@@ -426,6 +467,23 @@ async function main() {
     movesSinceClear = linesCleared > 0 ? 0 : movesSinceClear + 1;
     consecutiveMoves += 1; // недопустимые попытки (invalidDrop) сбрасывают эту серию в 0
     shapesPlacedThisGame += 1;
+
+    // Ивент партии (game/events.js) — раз в игру, случайный момент/длительность.
+    const eventChange = eventDirector.onShapePlaced(shapesPlacedThisGame);
+    if (eventChange?.type === 'started') {
+      const active = eventDirector.getActive();
+      showEventToast({
+        container: document.body,
+        i18n,
+        icon: EVENT_ICONS[eventChange.eventType],
+        title: i18n.t(`event.${eventChange.eventType}.title`),
+        desc: i18n.t(`event.${eventChange.eventType}.desc`, { goal: active.totalMoves }),
+      });
+      renderTopPanel();
+    } else if (eventChange?.type === 'ended') {
+      renderTopPanel();
+    }
+
     const isLastSlot = shapes.every((s) => s === null);
     const isBigShape = cellsPlaced >= 6;
 
@@ -468,7 +526,7 @@ async function main() {
         const cellsOfColor = explodedCells.filter((e) => e.color === cellColor);
         const cx = cellsOfColor.reduce((s, e) => s + e.col, 0) / cellsOfColor.length;
         const cy = cellsOfColor.reduce((s, e) => s + e.row, 0) / cellsOfColor.length;
-        const bonus = count * COLOR_CLEAR_BONUS_PER_CELL;
+        const bonus = count * COLOR_CLEAR_BONUS_PER_CELL * colorBonusMultiplier;
         colorClearBonus += bonus;
         colorClearEvents.push({ color: cellColor, count, bonus, cx, cy });
       }
@@ -629,6 +687,7 @@ async function main() {
   // ---- новая партия поверх той же сессии (без перезагрузки страницы) ----
   function resetGame() {
     resetWaveRhythm(); // R05.9: новая партия — новый волновой ритм размеров фигур
+    eventDirector.reset(); // новая партия — новый случайный момент/тип ивента
     board = new Board();
     score = new Score();
     shapes = generateShapeSet(board);

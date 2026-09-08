@@ -177,9 +177,19 @@ export function resetWaveRhythm() {
 const LARGE_PHASE_BOOST = 7;
 const SMALL_PHASE_SUPPRESS = 0.5;
 
-/** Множитель веса по текущей фазе волны — влияет только на крупные фигуры. */
-function waveMultiplier(cellCount) {
+/**
+ * Множитель веса по текущей фазе волны — влияет только на крупные фигуры.
+ * bigShapeRainActive (game/events.js, ивент «дождь крупных фигур») форсирует
+ * тот же сильный буст, что и фаза «крупных», независимо от реальной фазы
+ * волны — саму волну (waveState) при этом не трогаем, чтобы её ритм не сбился
+ * и продолжился по расписанию после того, как ивент закончится. Это только
+ * вес: фигуру, для которой findValidPlacements уже вернул пустой список (её
+ * физически некуда поставить), сюда не пропускает более ранний фильтр в
+ * pickForBoard — ивент никогда не обходит эту проверку.
+ */
+function waveMultiplier(cellCount, bigShapeRainActive) {
   if (cellCount < LARGE_SHAPE_CELLS) return 1;
+  if (bigShapeRainActive) return LARGE_PHASE_BOOST;
   return waveState.phase === 'large' ? LARGE_PHASE_BOOST : SMALL_PHASE_SUPPRESS;
 }
 
@@ -251,11 +261,12 @@ function weightedPick(items, weightOf) {
  * случай — доска уже фактически проиграна), возвращает чистый случайный
  * выбор: подбирать тут больше не из чего.
  * @param {import('./board.js').Board} board
- * @param {{movesSinceClear?: number}} [context] - сколько ходов подряд без очистки линии (app.js ведёт счётчик)
+ * @param {{movesSinceClear?: number, bigShapeRainActive?: boolean}} [context] - movesSinceClear: сколько ходов подряд без очистки линии (app.js ведёт счётчик); bigShapeRainActive: активен ли ивент «дождь крупных фигур» (game/events.js)
  * @returns {Shape}
  */
 function pickForBoard(board, context = {}) {
   const movesSinceClear = context.movesSinceClear ?? 0;
+  const bigShapeRainActive = context.bigShapeRainActive ?? false;
 
   const evaluated = SHAPE_CATALOG.map((source) => {
     const placements = findValidPlacements(source, board);
@@ -280,7 +291,7 @@ function pickForBoard(board, context = {}) {
   const picked = weightedPick(pool, (e) => {
     let weight = 1 + Math.min(e.placements.length, 10) * 0.5;
     if (struggling) weight += e.bestClearSize * 0.8;
-    weight *= waveMultiplier(e.source.cells.length);
+    weight *= waveMultiplier(e.source.cells.length, bigShapeRainActive);
     weight *= holeProneSuppressMultiplier(e.source.id);
     return weight;
   });
@@ -298,7 +309,7 @@ function pickForBoard(board, context = {}) {
  * для всех трёх). context.movesSinceClear (от app.js) включает более
  * настойчивую помощь, когда игрок давно не чистил линию.
  * @param {import('./board.js').Board} [board]
- * @param {{movesSinceClear?: number}} [context]
+ * @param {{movesSinceClear?: number, bigShapeRainActive?: boolean}} [context]
  * @returns {Shape[]}
  */
 export function generateShapeSet(board, context) {

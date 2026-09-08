@@ -202,14 +202,37 @@ const TOAST_LIFETIME_MS = 4200;
  * Показывает всплывающую карточку о новом достижении (R05.7) — растёт и
  * появляется, держится, затем уезжает и исчезает; можно закрыть вручную.
  * Если уведомлений несколько подряд — складываются в очередь и показываются
- * один за другим, а не поверх друг друга.
+ * один за другим, а не поверх друг друга. Общая очередь/DOM-механика вынесена
+ * в renderToast/processToastQueue — showEventToast (см. ниже, ивенты партии)
+ * использует ту же самую очередь и разметку, просто с другим содержимым.
  * @param {{ container: HTMLElement, i18n: object, def: import('../game/achievements.js').AchievementDef }} opts
  */
 const toastQueue = [];
 let toastShowing = false;
 
 export function showAchievementUnlock({ container, i18n, def }) {
-  toastQueue.push({ container, i18n, def });
+  toastQueue.push({
+    container,
+    i18n,
+    content: {
+      icon: def.icon,
+      kicker: i18n.t('newAchievement'),
+      title: i18n.t(`achievement.${def.id}.title`),
+      desc: i18n.t(`achievement.${def.id}.desc`),
+    },
+  });
+  if (!toastShowing) processToastQueue();
+}
+
+/**
+ * Показывает всплывающую карточку о старте временного ивента партии
+ * (game/events.js) — та же самая очередь/анимация, что и у уведомления о
+ * достижении, просто с готовым (уже переведённым) содержимым вместо поиска
+ * его по id достижения.
+ * @param {{ container: HTMLElement, i18n: object, icon: string, title: string, desc: string }} opts
+ */
+export function showEventToast({ container, i18n, icon, title, desc }) {
+  toastQueue.push({ container, i18n, content: { icon, kicker: null, title, desc } });
   if (!toastShowing) processToastQueue();
 }
 
@@ -223,30 +246,31 @@ function processToastQueue() {
   renderToast(next, () => processToastQueue());
 }
 
-function renderToast({ container, i18n, def }, onDone) {
+function renderToast({ container, i18n, content }, onDone) {
   const toast = document.createElement('div');
   toast.className = 'achievement-toast';
 
   const icon = document.createElement('div');
   icon.className = 'achievement-toast-icon';
-  icon.textContent = def.icon;
+  icon.textContent = content.icon;
 
   const body = document.createElement('div');
   body.className = 'achievement-toast-body';
 
-  const kicker = document.createElement('div');
-  kicker.className = 'achievement-toast-kicker';
-  kicker.textContent = i18n.t('newAchievement');
-
   const title = document.createElement('div');
   title.className = 'achievement-toast-title';
-  title.textContent = i18n.t(`achievement.${def.id}.title`);
+  title.textContent = content.title;
 
   const desc = document.createElement('div');
   desc.className = 'achievement-toast-desc';
-  desc.textContent = i18n.t(`achievement.${def.id}.desc`);
+  desc.textContent = content.desc;
 
-  body.appendChild(kicker);
+  if (content.kicker) {
+    const kicker = document.createElement('div');
+    kicker.className = 'achievement-toast-kicker';
+    kicker.textContent = content.kicker;
+    body.appendChild(kicker);
+  }
   body.appendChild(title);
   body.appendChild(desc);
 

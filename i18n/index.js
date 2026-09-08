@@ -35,6 +35,14 @@ const DICTIONARIES = {
     'challenge.shapesPlaced': 'Поставь {goal} фигур',
     'challenge.survive': 'Доиграй без game over {goal} ходов подряд',
 
+    'event.doublePoints.title': 'Двойные очки!',
+    'event.doublePoints.desc': 'Следующие {goal} ходов очки за фигуры и линии удвоены',
+    'event.bigShapeRain.title': 'Дождь крупных фигур!',
+    'event.bigShapeRain.desc': 'Следующие {goal} ходов крупные фигуры выпадают намного чаще',
+    'event.colorBonusRush.title': 'Цветной бонус ×2!',
+    'event.colorBonusRush.desc': 'Следующие {goal} ходов бонус за полное удаление цвета удвоен',
+    eventMovesLeft: 'Осталось ходов: {goal}',
+
     achievements: 'Достижения',
     achievementsBtnLabel: 'Достижения',
     achievementLocked: 'Заблокировано',
@@ -143,6 +151,14 @@ const DICTIONARIES = {
     'challenge.combo': 'Get a ×2 combo at least once',
     'challenge.shapesPlaced': 'Place {goal} shapes',
     'challenge.survive': 'Survive {goal} moves in a row without game over',
+
+    'event.doublePoints.title': 'Double points!',
+    'event.doublePoints.desc': 'Next {goal} moves: shape and line points are doubled',
+    'event.bigShapeRain.title': 'Big shape rain!',
+    'event.bigShapeRain.desc': 'Next {goal} moves: large shapes drop much more often',
+    'event.colorBonusRush.title': 'Color bonus rush!',
+    'event.colorBonusRush.desc': 'Next {goal} moves: the full-color-clear bonus is doubled',
+    eventMovesLeft: '{goal} moves left',
 
     achievements: 'Achievements',
     achievementsBtnLabel: 'Achievements',

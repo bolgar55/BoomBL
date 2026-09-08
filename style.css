@@ -175,6 +175,23 @@ body {
   font-weight: 700;
 }
 
+/* Активный временный ивент партии (game/events.js) занимает ту же панель —
+   выделяем её на время ивента заметным градиентом/свечением, чтобы отличалось
+   от обычного отображения ачивки/челленджа. */
+@keyframes eventPanelGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(165, 94, 234, 0.35); }
+  50% { box-shadow: 0 0 14px 2px rgba(165, 94, 234, 0.55); }
+}
+
+#challenge-panel.challenge-panel--event {
+  background: linear-gradient(90deg, rgba(108, 92, 231, 0.28), rgba(165, 94, 234, 0.28));
+  animation: eventPanelGlow 1.8s ease-in-out infinite;
+}
+
+#challenge-panel.challenge-panel--event #challenge-label {
+  font-weight: 700;
+}
+
 #status-line {
   color: var(--text-muted);
   font-size: 13px;
