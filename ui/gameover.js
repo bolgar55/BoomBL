@@ -1,15 +1,13 @@
 // ui/gameover.js
-// Экран Game Over (R20/R21/R27): итоговый счёт, новый рекорд, кнопки
-// «Играть снова» (через telegram-bridge.showMainButton — видна только на
-// этом экране) и «Поделиться результатом» (через telegram-bridge.shareResult).
-// Показывать экран (по факту board.canFitAnywhere() === false) решает
-// вызывающий код интеграции (таск 07) — этот модуль сам ничего не опрашивает.
-//
-// DOM экрана модуль создаёт сам при первом show() и добавляет в container —
-// это осознанное решение, чтобы не требовать правок index.html/style.css
-// (чужая зона: интеграция всех модулей — отдельный таск 07, см. CONCERNS).
+// Экран Game Over: итоговый счёт (с анимированной докруткой), бейдж нового
+// рекорда, мини-статистика партии (линий очищено / лучшее комбо), конфетти,
+// кнопки «Играть снова» (дублирует telegramBridge.showMainButton — видна
+// только на этом экране — своей кнопкой в самой карточке, чтобы работать
+// и вне Telegram) и «Поделиться результатом» (через telegramBridge.shareResult).
+// DOM экрана модуль создаёт сам при первом show() и добавляет в container.
 
-// Ключ persistence — общий с остальными тасками, читающими/пишущими рекорд.
+import { animateScoreCountUp, playGameOverConfetti } from './animations.js';
+
 const HIGH_SCORE_KEY = 'highScore';
 
 /**
@@ -38,36 +36,11 @@ export function computeGameOverState(score, previousHighScore) {
 }
 
 /**
- * Текст для «Поделиться результатом» (§Решения 7) — ссылка добавляется самим
- * telegram-bridge.shareResult, здесь формируется только текст сообщения.
- * @param {number} score
- * @param {boolean} isNewRecordFlag
- * @returns {string}
- */
-export function formatShareText(score, isNewRecordFlag) {
-  const base = `Я набрал ${score} очков в BoomBL!`;
-  return isNewRecordFlag ? `${base} Новый личный рекорд!` : base;
-}
-
-/**
- * Текст итогового счёта, показываемый на самом экране (форматирование,
- * без DOM — определение того, показывать ли пометку о рекорде).
- * @param {number} score
- * @param {number} highScore
- * @param {boolean} isNewRecordFlag
- * @returns {string}
- */
-export function formatResultText(score, highScore, isNewRecordFlag) {
-  return isNewRecordFlag
-    ? `Счёт: ${score} — новый рекорд!`
-    : `Счёт: ${score} (рекорд: ${highScore})`;
-}
-
-/**
  * Создаёт контроллер экрана Game Over.
  * @param {{
  *   telegramBridge: {showMainButton: Function, hideMainButton: Function, shareResult: Function},
  *   persistence: {getItem: Function, setItem: Function},
+ *   i18n: {t: Function},
  *   container?: object,
  *   document?: object,
  *   onRestart?: () => void,
@@ -75,11 +48,13 @@ export function formatResultText(score, highScore, isNewRecordFlag) {
  * }} deps
  */
 export function createGameOverScreen(deps) {
-  const { telegramBridge, persistence } = deps;
+  const { telegramBridge, persistence, i18n } = deps;
   const doc = deps.document ?? (typeof document !== 'undefined' ? document : null);
 
   let overlay = null;
+  let els = null;
   let lastState = null;
+  let stopConfetti = null;
 
   function ensureOverlay() {
     if (overlay || !doc) return overlay;
@@ -89,38 +64,127 @@ export function createGameOverScreen(deps) {
     overlay.className = 'gameover-overlay';
     overlay.hidden = true;
 
-    const title = doc.createElement('h2');
-    title.textContent = 'Игра окончена';
+    const confetti = doc.createElement('canvas');
+    confetti.className = 'gameover-confetti';
+    confetti.setAttribute('data-role', 'confetti');
+    confetti.setAttribute('aria-hidden', 'true');
 
-    const result = doc.createElement('p');
-    result.setAttribute('data-role', 'result');
+    const card = doc.createElement('div');
+    card.className = 'gameover-card';
+
+    const icon = doc.createElement('div');
+    icon.className = 'gameover-icon';
+    icon.setAttribute('data-role', 'icon');
+    icon.setAttribute('aria-hidden', 'true');
+
+    const title = doc.createElement('h2');
+    title.setAttribute('data-role', 'title');
+
+    const recordBadge = doc.createElement('span');
+    recordBadge.className = 'gameover-record-badge';
+    recordBadge.setAttribute('data-role', 'record-badge');
+    recordBadge.hidden = true;
+
+    const scoreLabel = doc.createElement('div');
+    scoreLabel.className = 'gameover-score-label';
+    scoreLabel.setAttribute('data-role', 'score-label');
+
+    const scoreValue = doc.createElement('div');
+    scoreValue.className = 'gameover-score-value';
+    scoreValue.setAttribute('data-role', 'score-value');
+    scoreValue.textContent = '0';
+
+    const highscoreLine = doc.createElement('div');
+    highscoreLine.className = 'gameover-highscore';
+    highscoreLine.setAttribute('data-role', 'highscore-line');
+
+    const stats = doc.createElement('div');
+    stats.className = 'gameover-stats';
+
+    function buildStat(role) {
+      const stat = doc.createElement('div');
+      stat.className = 'gameover-stat';
+      const value = doc.createElement('div');
+      value.className = 'gameover-stat-value';
+      value.setAttribute('data-role', `stat-${role}-value`);
+      const label = doc.createElement('div');
+      label.className = 'gameover-stat-label';
+      label.setAttribute('data-role', `stat-${role}-label`);
+      stat.appendChild(value);
+      stat.appendChild(label);
+      return { stat, value, label };
+    }
+    const linesStat = buildStat('lines');
+    const comboStat = buildStat('combo');
+    stats.appendChild(linesStat.stat);
+    stats.appendChild(comboStat.stat);
+
+    const actions = doc.createElement('div');
+    actions.className = 'gameover-actions';
+
+    const restartButton = doc.createElement('button');
+    restartButton.type = 'button';
+    restartButton.setAttribute('data-role', 'restart');
+    restartButton.addEventListener('click', () => {
+      hide();
+      deps.onRestart?.();
+    });
 
     const shareButton = doc.createElement('button');
     shareButton.type = 'button';
     shareButton.setAttribute('data-role', 'share');
-    shareButton.textContent = 'Поделиться результатом';
     shareButton.addEventListener('click', shareCurrentResult);
 
-    overlay.appendChild(title);
-    overlay.appendChild(result);
-    overlay.appendChild(shareButton);
+    actions.appendChild(restartButton);
+    actions.appendChild(shareButton);
+
+    card.appendChild(icon);
+    card.appendChild(title);
+    card.appendChild(recordBadge);
+    card.appendChild(scoreLabel);
+    card.appendChild(scoreValue);
+    card.appendChild(highscoreLine);
+    card.appendChild(stats);
+    card.appendChild(actions);
+
+    overlay.appendChild(confetti);
+    overlay.appendChild(card);
     container.appendChild(overlay);
+
+    els = {
+      confetti,
+      icon,
+      title,
+      recordBadge,
+      scoreLabel,
+      scoreValue,
+      highscoreLine,
+      linesValue: linesStat.value,
+      linesLabel: linesStat.label,
+      comboValue: comboStat.value,
+      comboLabel: comboStat.label,
+      restartButton,
+      shareButton,
+    };
 
     return overlay;
   }
 
   function shareCurrentResult() {
     if (!lastState) return;
-    telegramBridge.shareResult(formatShareText(lastState.score, lastState.isNewHighScore));
+    const key = lastState.isNewHighScore ? 'shareTextRecord' : 'shareText';
+    telegramBridge.shareResult(i18n.t(key, { score: lastState.score }));
   }
 
   /**
    * Показывает экран Game Over: читает и при необходимости обновляет
-   * сохранённый рекорд, выводит счёт, включает MainButton «Играть снова».
+   * сохранённый рекорд, выводит счёт (с докруткой) и мини-статистику
+   * партии, запускает конфетти, включает MainButton «Играть снова».
    * @param {number} score
+   * @param {{linesCleared?: number, bestCombo?: number}} [stats]
    * @returns {Promise<{score:number, highScore:number, isNewHighScore:boolean}>}
    */
-  async function show(score) {
+  async function show(score, stats = {}) {
     const previousHighScore = await persistence.getItem(HIGH_SCORE_KEY, 0);
     const state = computeGameOverState(score, previousHighScore);
     lastState = state;
@@ -132,16 +196,34 @@ export function createGameOverScreen(deps) {
     deps.playGameOverSound?.();
 
     const el = ensureOverlay();
-    if (el) {
-      el.querySelector('[data-role="result"]').textContent = formatResultText(
-        state.score,
-        state.highScore,
-        state.isNewHighScore
-      );
+    if (el && els) {
+      els.icon.textContent = state.isNewHighScore ? '🏆' : '💥';
+      els.title.textContent = i18n.t('gameOver');
+      els.recordBadge.hidden = !state.isNewHighScore;
+      els.recordBadge.textContent = i18n.t('newRecord');
+      els.scoreLabel.textContent = i18n.t('score');
+      els.highscoreLine.textContent = state.isNewHighScore
+        ? ''
+        : `${i18n.t('highScore')}: ${state.highScore}`;
+      els.linesValue.textContent = String(stats.linesCleared ?? 0);
+      els.linesLabel.textContent = i18n.t('linesCleared');
+      els.comboValue.textContent = `×${stats.bestCombo ?? 0}`;
+      els.comboLabel.textContent = i18n.t('bestCombo');
+      els.restartButton.textContent = i18n.t('playAgain');
+      els.shareButton.textContent = i18n.t('share');
+
+      animateScoreCountUp(els.scoreValue, 0, state.score, 900);
+
+      stopConfetti?.();
+      stopConfetti = playGameOverConfetti(els.confetti, {
+        count: state.isNewHighScore ? 110 : 60,
+        durationMs: state.isNewHighScore ? 3200 : 2200,
+      });
+
       el.hidden = false;
     }
 
-    telegramBridge.showMainButton('Играть снова', () => {
+    telegramBridge.showMainButton(i18n.t('playAgain'), () => {
       hide();
       deps.onRestart?.();
     });
@@ -152,6 +234,8 @@ export function createGameOverScreen(deps) {
   /** Скрывает экран и MainButton — виден только на экране Game Over (R27). */
   function hide() {
     if (overlay) overlay.hidden = true;
+    stopConfetti?.();
+    stopConfetti = null;
     telegramBridge.hideMainButton();
   }
 

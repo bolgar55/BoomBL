@@ -345,21 +345,41 @@ button:disabled {
 /* ---------- Экран Game Over (R21/R27) ----------
    DOM строит сам ui/gameover.js (createGameOverScreen), сюда монтируется
    через container: #overlay-root — здесь только оформление того, что он
-   создаёт (.gameover-overlay, заголовок, [data-role="result"|"share"]). */
+   создаёт (.gameover-overlay > canvas.gameover-confetti + .gameover-card
+   с иконкой/счётом/бейджем рекорда/статистикой/кнопками). */
+
+@keyframes goOverlayFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes goCardIn {
+  from { opacity: 0; transform: translateY(18px) scale(0.92); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes goIconPop {
+  0% { transform: scale(0.4) rotate(-8deg); opacity: 0; }
+  60% { transform: scale(1.15) rotate(4deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+@keyframes goBadgePulse {
+  0%, 100% { box-shadow: 0 0 10px 0 rgba(255, 215, 0, 0.55); }
+  50% { box-shadow: 0 0 20px 6px rgba(255, 215, 0, 0.85); }
+}
 
 .gameover-overlay {
   position: fixed;
   inset: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
   padding: 24px;
-  text-align: center;
-  background: rgba(10, 10, 20, 0.82);
+  background: rgba(8, 8, 16, 0.86);
   color: #fff;
   z-index: 100;
+  animation: goOverlayFadeIn 220ms ease-out;
 }
 
 :root[data-theme='light'] .gameover-overlay {
@@ -371,20 +391,160 @@ button:disabled {
   display: none;
 }
 
-.gameover-overlay h2 {
-  margin: 0;
-  font-size: 26px;
+.gameover-confetti {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
-.gameover-overlay p[data-role='result'] {
-  margin: 0;
+.gameover-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-width: 320px;
+  padding: 28px 24px 24px;
+  border-radius: 22px;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(44, 44, 68, 0.92), rgba(26, 26, 46, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  animation: goCardIn 380ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+:root[data-theme='light'] .gameover-card {
+  background: linear-gradient(180deg, #ffffff, #f0f0f5);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+.gameover-icon {
+  font-size: 42px;
+  line-height: 1;
+  animation: goIconPop 480ms cubic-bezier(0.2, 0.9, 0.3, 1.4);
+}
+
+.gameover-card h2 {
+  margin: 2px 0 0;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+}
+
+.gameover-record-badge {
+  margin-top: 8px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #4a3400;
+  background: linear-gradient(180deg, #FFE066, #FFC107);
+  animation: goBadgePulse 1.4s ease-in-out infinite;
+}
+
+.gameover-record-badge[hidden] {
+  display: none;
+}
+
+.gameover-score-label {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.gameover-score-value {
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, var(--ui-gradient-from), var(--ui-gradient-to));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gameover-highscore {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.gameover-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  width: 100%;
+  margin: 12px 0 4px;
+}
+
+.gameover-stat {
+  padding: 10px 6px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+:root[data-theme='light'] .gameover-stat {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.gameover-stat-value {
   font-size: 18px;
-  color: var(--score-color);
-  font-weight: 700;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.gameover-stat-label {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.gameover-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin-top: 14px;
 }
 
 .gameover-overlay button[data-role='share'] {
-  min-width: 220px;
+  width: 100%;
+}
+
+.gameover-overlay button[data-role='restart'] {
+  width: 100%;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: inherit;
+}
+
+:root[data-theme='light'] .gameover-overlay button[data-role='restart'] {
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+/* ---------- Метка версии игры ----------
+   Едва заметная подпись в углу экрана — не мешает игре, но видна тем, кто
+   присылает баг-репорты (легко сослаться на конкретную версию). */
+
+.version-tag {
+  position: fixed;
+  right: 8px;
+  bottom: max(4px, env(safe-area-inset-bottom, 0px));
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-muted);
+  opacity: 0.35;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  user-select: none;
+  z-index: 5;
 }
 
 /* ---------- Переключатель звука (R20) ----------

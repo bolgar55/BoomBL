@@ -108,6 +108,8 @@ let movesSinceClear = 0;
 let consecutiveMoves = 0; // подряд успешных ходов без единого недопустимого дропа
 let hadInvalidThisGame = false; // хоть одна неудачная попытка за эту партию
 let shapesPlacedThisGame = 0; // фигур поставлено именно в этой партии (для «идеального старта»)
+let linesClearedThisGame = 0; // для мини-статистики на экране Game Over
+let bestComboThisGame = 0; // для мини-статистики на экране Game Over
 
 function currentTheme() {
   return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
@@ -285,6 +287,7 @@ async function main() {
   const gameOverScreen = createGameOverScreen({
     telegramBridge,
     persistence,
+    i18n,
     container: overlayRoot,
     onRestart: resetGame,
     playGameOverSound: () => soundEngine.playGameOver(),
@@ -346,35 +349,14 @@ async function main() {
   }
 
   async function showGameOver() {
-    const state = await gameOverScreen.show(totalScore);
+    const state = await gameOverScreen.show(totalScore, {
+      linesCleared: linesClearedThisGame,
+      bestCombo: bestComboThisGame,
+    });
     if (state.highScore > highScore) {
       highScore = state.highScore;
       highScoreValueEl.textContent = String(highScore);
     }
-
-    // ui/gameover.js строит свой DOM сам и не принимает i18n — сигнатура не
-    // предусматривает перевод (см. CONCERNS в отчёте). Патчим уже
-    // отрисованный текст поверх, не трогая сам модуль, чтобы закрыть R44
-        // насколько это возможно без правки чужой зоны.
-    const overlayEl = overlayRoot.querySelector('.gameover-overlay');
-    if (overlayEl) {
-      const titleEl = overlayEl.querySelector('h2');
-      const resultEl = overlayEl.querySelector('[data-role="result"]');
-      const shareEl = overlayEl.querySelector('[data-role="share"]');
-      if (titleEl) titleEl.textContent = i18n.t('gameOver');
-      if (resultEl) {
-        resultEl.textContent = state.isNewHighScore
-          ? `${i18n.t('result')}: ${state.score} — ${i18n.t('highScore')}!`
-          : `${i18n.t('result')}: ${state.score} (${i18n.t('highScore')}: ${state.highScore})`;
-      }
-      if (shareEl) shareEl.textContent = i18n.t('share');
-    }
-    // MainButton выставляется внутри show() с русским текстом — перевыставляем
-    // с переведённым, тот же переход (hide + restart), что и внутри модуля.
-    telegramBridge.showMainButton(i18n.t('playAgain'), () => {
-      gameOverScreen.hide();
-      resetGame();
-    });
   }
 
   function checkGameOver() {
@@ -438,6 +420,8 @@ async function main() {
 
     const linesCleared = clearedRows.length + clearedCols.length;
     const { points, comboStreak } = score.addMove({ cellsPlaced, linesCleared });
+    linesClearedThisGame += linesCleared;
+    bestComboThisGame = Math.max(bestComboThisGame, comboStreak);
     // Захватываем ДО обновления movesSinceClear — «камбэк» (R05.7) считает
     // именно то, что было накоплено ПЕРЕД этим ходом, не после его сброса.
     const wasStruggling = movesSinceClear >= 6;
@@ -658,6 +642,8 @@ async function main() {
     consecutiveMoves = 0;
     hadInvalidThisGame = false;
     shapesPlacedThisGame = 0;
+    linesClearedThisGame = 0;
+    bestComboThisGame = 0;
     // Сброс счёта — сразу, без анимации отсчёта вниз (animateScoreCountUp
     // внутри updateScoreUI ничего не делает при from===to).
     displayedScore = 0;

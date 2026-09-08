@@ -406,6 +406,70 @@ export function playBonusPopup(container, { x, y, text, big = false, color = nul
   el.addEventListener('animationend', () => el.remove(), { once: true });
 }
 
+/**
+ * Конфетти на экране Game Over — независимый rAF-цикл на своём канвасе (не
+ * через createEffectsEngine: живёт поверх целого экрана, а не только поля, и
+ * запускается ровно один раз при показе экрана, а не многократно, как
+ * игровые эффекты). Канвас растягивается под текущий размер своего
+ * контейнера (overlay во весь экран) с поправкой на devicePixelRatio.
+ * @param {HTMLCanvasElement} canvas
+ * @param {{count?: number, durationMs?: number}} [opts]
+ * @returns {() => void} остановка — отменяет rAF и чистит канвас
+ */
+export function playGameOverConfetti(canvas, { count = 70, durationMs = 2600 } = {}) {
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const width = canvas.clientWidth || window.innerWidth;
+  const height = canvas.clientHeight || window.innerHeight;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const pieces = [];
+  for (let i = 0; i < count; i++) {
+    pieces.push({
+      x: Math.random() * width,
+      y: -20 - Math.random() * height * 0.5,
+      vy: 90 + Math.random() * 140,
+      vx: (Math.random() - 0.5) * 50,
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: (Math.random() - 0.5) * 6,
+      size: 5 + Math.random() * 6,
+      color: FULL_CLEAR_CONFETTI_COLORS[Math.floor(Math.random() * FULL_CLEAR_CONFETTI_COLORS.length)],
+      delay: Math.random() * 500,
+    });
+  }
+
+  const start = performance.now();
+  let rafId = null;
+
+  function frame(now) {
+    const elapsed = Math.max(0, now - start);
+    ctx.clearRect(0, 0, width, height);
+    if (elapsed >= durationMs) {
+      rafId = null;
+      return;
+    }
+    for (const p of pieces) {
+      const pElapsed = elapsed - p.delay;
+      if (pElapsed < 0) continue;
+      const t = pElapsed / 1000;
+      const y = p.y + p.vy * t;
+      if (y > height + 20) continue;
+      const lifeSpan = Math.max(1, durationMs - p.delay) / 1000;
+      const life = Math.max(0, 1 - t / lifeSpan);
+      drawRotatedFragment(ctx, p.x + p.vx * t, y, p.size, p.rotation + p.rotationSpeed * t, p.color, Math.min(1, life * 2));
+    }
+    rafId = requestAnimationFrame(frame);
+  }
+  rafId = requestAnimationFrame(frame);
+
+  return () => {
+    if (rafId !== null) cancelAnimationFrame(rafId);
+    ctx.clearRect(0, 0, width, height);
+  };
+}
+
 // Скорость «дыхания» подсветки превью — рад/сек синусоиды (~2с на цикл).
 const COMBO_PREVIEW_BREATH_SPEED = 3.2;
 
