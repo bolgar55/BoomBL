@@ -12,11 +12,11 @@
 // GAME_URL — открытое место спецификации, читается из переменных окружения
 // через config.js (см. этот файл и api/config.js), а не зашито константой здесь.
 
-import { Board, BOARD_SIZE } from './game/board.js';
+import { Board, BOARD_SIZE, hasAnyValidMove } from './game/board.js';
 import { generateShapeSet } from './game/shapes.js';
 import { Score } from './game/score.js';
 import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js';
-import { attachDragAndDrop } from './ui/input.js';
+import { attachDragAndDrop, isValidDrop } from './ui/input.js';
 import {
   playAppear,
   playShake,
@@ -38,11 +38,15 @@ import { createSoundEngine } from './ui/sound.js';
 import { loadConfig } from './config.js';
 
 // Бонус за закрытие изолированного пробела (R05.4) — за клетку закрытого
-// пробела, и флэт-бонус за полную очистку поля («идеальный» ход). Открытые
-// числа баланса — не заданы спецификацией, подобраны так, чтобы быть
-// заметными на фоне обычных очков (1/клетку) и очистки линий (10×N²).
+// пробела. Открытое число баланса — не задано спецификацией, подобрано так,
+// чтобы быть заметным на фоне обычных очков (1/клетку) и очистки линий (10×N²).
 const GAP_FILL_BONUS_PER_CELL = 10;
-const FULL_CLEAR_BONUS = 100;
+// Флэт-бонус за полную очистку поля («идеальный» ход, R06) — задан явно.
+const FULL_CLEAR_BONUS = 1500;
+// Короткая пауза (R06: «короткая пауза после очистки») между обычным
+// взрывом очищенной линии и большим праздничным откликом полной очистки —
+// иначе оба эффекта стартуют в один и тот же кадр и сливаются в один.
+const FULL_CLEAR_PAUSE_MS = 280;
 
 // ---------- элементы DOM ----------
 const boardCanvas = document.getElementById('board-canvas');
@@ -78,7 +82,7 @@ const overlayRoot = document.getElementById('overlay-root');
 // ---- состояние партии (партия не сохраняется между запусками — spec §12) ----
 let board = new Board();
 let score = new Score();
-let shapes = generateShapeSet();
+let shapes = generateShapeSet(board);
 let shapeColors = shapes.map(() => randomBlockColor());
 let colorGrid = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
 let totalScore = 0;
@@ -207,12 +211,19 @@ async function main() {
     playGameOverSound: () => soundEngine.playGameOver(),
   });
 
-  function updateScoreUI(comboStreak) {
-    // R19: очки не «прыгают» мгновенно, а плавно докручиваются от прежнего
-    // значения к новому (animateScoreCountUp сама не делает ничего, если
-    // from===to — например, сразу после resetGame).
+  // R19: очки не «прыгают» мгновенно, а плавно докручиваются от прежнего
+  // значения к новому (animateScoreCountUp сама не делает ничего, если
+  // from===to — например, сразу после resetGame). Вызывается сразу после
+  // каждого изменения totalScore; для бонуса полной очистки (R06) — ещё раз
+  // отдельно, после паузы, когда сам totalScore уже вырос на FULL_CLEAR_BONUS
+  // (см. placeShape) — так «докрутка счётчика» видна именно в момент вспышки.
+  function revealScore() {
     animateScoreCountUp(scoreValueEl, displayedScore, totalScore);
     displayedScore = totalScore;
+  }
+
+  function updateScoreUI(comboStreak) {
+    revealScore();
     if (comboStreak > 0) {
       comboValueEl.hidden = false;
       comboValueEl.textContent = i18n.t('combo', { goal: comboStreak });
@@ -254,7 +265,9 @@ async function main() {
   }
 
   function checkGameOver() {
-    if (!board.canFitAnywhere(shapes.filter(Boolean))) {
+    // R05.5: если хоть одна фигура лотка ещё куда-то влезает — партия
+    // продолжается; ни одна не влезает — Game Over.
+    if (!hasAnyValidMove(board, shapes)) {
       gameOver = true;
       reportGameEvent({ gameOver: true });
       showGameOver();
@@ -263,7 +276,9 @@ async function main() {
 
   function refillTrayIfEmpty() {
     if (shapes.every((s) => s === null)) {
-      shapes = generateShapeSet();
+      // «Умная» генерация (R05.5) смотрит на текущее поле, а не выдаёт
+      // фигуры вслепую — see game/shapes.js pickForBoard.
+      shapes = generateShapeSet(board);
       shapeColors = shapes.map(() => randomBlockColor());
       renderTray();
       playAppear(trayEls);
@@ -273,6 +288,17 @@ async function main() {
   function placeShape(shapeIndex, row, col) {
     if (gameOver) return;
     const shape = shapes[shapeIndex];
+    if (!shape) return;
+
+    // Повторная проверка прямо перед постановкой (R07): ui/input.js уже
+    // проверил допустимость в момент отпускания пальца, но между этим и
+    // фактическим вызовом onDrop идёт анимация «влёта» (~140мс) — если игрок
+    // успел сверхбыстро начать и завершить ещё один драг за это время и тот
+    // уже поменял поле, здесь мы не должны попытаться поставить фигуру
+    // поверх уже занятых клеток (board.place иначе бросит исключение и
+    // оставит фигуру «зависшей» — ни на поле, ни в лотке).
+    if (!isValidDrop(board, shape, row, col)) return;
+
     const color = shapeColors[shapeIndex];
     const cellsPlaced = shape.cells.length;
 
@@ -298,7 +324,7 @@ async function main() {
     const linesCleared = clearedRows.length + clearedCols.length;
     const { points, comboStreak } = score.addMove({ cellsPlaced, linesCleared });
 
-    let bonus = isGapFill ? pocket.length * GAP_FILL_BONUS_PER_CELL : 0;
+    const gapBonus = isGapFill ? pocket.length * GAP_FILL_BONUS_PER_CELL : 0;
 
     if (linesCleared > 0) {
       // сперва собираем клетки и их цвета (клетки на пересечении очищенной
@@ -337,31 +363,50 @@ async function main() {
       fxEngine.add(createPlacementPulseLayer(placedCells, cellSize, color));
     }
 
-    // Полная очистка поля (R19, «очистка всего поля») — самый мощный
-    // визуальный отклик в игре, плюс отдельный флэт-бонус («идеальный» ход).
-    const isFullClear = linesCleared > 0 && board.isEmpty();
-    if (isFullClear) {
-      bonus += FULL_CLEAR_BONUS;
-      fxEngine.add(createFullClearBurstLayer(cellSize, BOARD_SIZE));
-    }
-
-    if (bonus > 0) {
-      const targetCells = isFullClear ? [{ row: (BOARD_SIZE - 1) / 2, col: (BOARD_SIZE - 1) / 2 }] : pocket;
-      const cx = targetCells.reduce((s, c) => s + c.col, 0) / targetCells.length;
-      const cy = targetCells.reduce((s, c) => s + c.row, 0) / targetCells.length;
+    if (gapBonus > 0) {
+      const cx = pocket.reduce((s, c) => s + c.col, 0) / pocket.length;
+      const cy = pocket.reduce((s, c) => s + c.row, 0) / pocket.length;
       playBonusPopup(bonusLayer, {
         x: (cx + 0.5) * cellSize,
         y: (cy + 0.5) * cellSize,
-        text: isFullClear ? `${i18n.t('perfectClear')} +${bonus}` : `+${bonus}`,
-        big: isFullClear,
+        text: `+${gapBonus}`,
       });
     }
 
-    totalScore += points + bonus;
-
+    totalScore += points + gapBonus;
     updateScoreUI(comboStreak);
+
+    // Полная очистка поля (R06) — самый мощный визуальный отклик в игре,
+    // плюс отдельный флэт-бонус +1500. Не срабатывает на самом ходе,
+    // который лишь размещает фигуру: только когда после него поле
+    // действительно опустело целиком, и ровно один раз на это событие —
+    // проверка board.isEmpty() выполняется один раз для этого конкретного
+    // вызова place(), не по таймеру/анимации, повторно сработать неоткуда.
+    // Короткая пауза (FULL_CLEAR_PAUSE_MS) отделяет обычный взрыв линии от
+    // большого праздничного отклика, чтобы они не слипались в один кадр —
+    // остальная игровая логика (тайл, проверка game over) паузу не ждёт.
+    if (linesCleared > 0 && board.isEmpty()) {
+      setTimeout(() => {
+        if (gameOver) return; // партия уже перезапущена — не начисляем бонус поверх новой
+        fxEngine.add(createFullClearBurstLayer(cellSize, BOARD_SIZE));
+        playBonusPopup(bonusLayer, {
+          x: (BOARD_SIZE / 2) * cellSize,
+          y: (BOARD_SIZE / 2) * cellSize,
+          text: `${i18n.t('perfectClear')} +${FULL_CLEAR_BONUS}`,
+          big: true,
+        });
+        totalScore += FULL_CLEAR_BONUS;
+        revealScore();
+        // Отдельным событием (не в основном reportGameEvent этого хода —
+        // тогда бонус посчитался бы в тот же вызов дважды с учётом задержки),
+        // только scoreDelta — linesCleared/comboStreak этот ход уже разово
+        // учтены в основном вызове ниже, второй раз их сюда не добавляем.
+        reportGameEvent({ scoreDelta: FULL_CLEAR_BONUS });
+      }, FULL_CLEAR_PAUSE_MS);
+    }
+
     refillTrayIfEmpty();
-    reportGameEvent({ linesCleared, scoreDelta: points + bonus, comboStreak, shapesPlaced: 1, gameOver: false });
+    reportGameEvent({ linesCleared, scoreDelta: points + gapBonus, comboStreak, shapesPlaced: 1, gameOver: false });
     checkGameOver();
   }
 
@@ -396,7 +441,7 @@ async function main() {
   function resetGame() {
     board = new Board();
     score = new Score();
-    shapes = generateShapeSet();
+    shapes = generateShapeSet(board);
     shapeColors = shapes.map(() => randomBlockColor());
     colorGrid = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
     totalScore = 0;

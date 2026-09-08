@@ -150,18 +150,13 @@ export class Board {
   /**
    * Определяет, есть ли на поле хоть одна позиция для хоть одной из
    * переданных фигур. Перебирает все 64 клетки для каждой фигуры (§3 спецификации).
+   * Делегирует hasAnyValidMove — та же проверка, что и R05.5, но как метод
+   * Board (оставлен ради обратной совместимости вызывающего кода).
    * @param {{cells: number[][]}[]} shapes
    * @returns {boolean}
    */
   canFitAnywhere(shapes) {
-    for (const shape of shapes) {
-      for (let r = 0; r < SIZE; r++) {
-        for (let c = 0; c < SIZE; c++) {
-          if (this.canPlace(shape, r, c)) return true;
-        }
-      }
-    }
-    return false;
+    return hasAnyValidMove(this, shapes);
   }
 
   /**
@@ -207,3 +202,51 @@ export class Board {
 }
 
 export const BOARD_SIZE = SIZE;
+
+/**
+ * Есть ли хотя бы одна допустимая позиция для фигуры на этом поле прямо
+ * сейчас (R05.5) — используется «умной» генерацией лотка (game/shapes.js),
+ * чтобы не выдавать фигуры, которые вообще некуда поставить.
+ * @param {{cells: number[][]}} piece
+ * @param {Board} board
+ * @returns {boolean}
+ */
+export function canPlacePiece(piece, board) {
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (board.canPlace(piece, r, c)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Все допустимые позиции фигуры на этом поле прямо сейчас (R05.5) —
+ * перебирает все 64 клетки. Используется «умной» генерацией лотка, чтобы
+ * оценить, насколько фигура «гибкая» (много позиций — безопасный выбор,
+ * мало — рискованный) и создаёт ли хоть одна из позиций комбо-очистку.
+ * @param {{cells: number[][]}} piece
+ * @param {Board} board
+ * @returns {{row:number, col:number}[]}
+ */
+export function findValidPlacements(piece, board) {
+  const placements = [];
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (board.canPlace(piece, r, c)) placements.push({ row: r, col: c });
+    }
+  }
+  return placements;
+}
+
+/**
+ * Есть ли среди доступных фигур лотка хоть одна, которую ещё можно
+ * поставить (R05.5/R21) — если нет ни одной, партия закончена (Game Over).
+ * Пустые слоты лотка (null — фигура уже поставлена) пропускаются.
+ * @param {Board} board
+ * @param {({cells: number[][]}|null)[]} availablePieces
+ * @returns {boolean}
+ */
+export function hasAnyValidMove(board, availablePieces) {
+  return availablePieces.some((piece) => piece && canPlacePiece(piece, board));
+}

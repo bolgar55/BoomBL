@@ -2,6 +2,12 @@
 // Каталог фигур игры (spec §Решения 1): относительные координаты клеток от (0,0).
 // Фигуры не вращаются (R10.1) — каждая ориентация внесена в каталог отдельной
 // статической записью, в модуле нет функции поворота.
+//
+// Генерация лотка (R05.5) — не полностью случайная: анализирует текущее
+// поле через game/board.js (findValidPlacements/canPlacePiece), чтобы не
+// выдавать фигуры, которые вообще некуда поставить, пока на поле есть место.
+
+import { BOARD_SIZE, findValidPlacements } from './board.js';
 
 /**
  * @typedef {{ id: string, cells: number[][] }} Shape
@@ -83,18 +89,83 @@ const SHAPE_CATALOG = [
   },
 ];
 
+function cloneShape(source) {
+  return { id: source.id, cells: source.cells.map(([r, c]) => [r, c]) };
+}
+
+/** Случайный выбор одной фигуры каталога без учёта поля — прежнее чистое поведение. */
+function pickPureRandom() {
+  return cloneShape(SHAPE_CATALOG[Math.floor(Math.random() * SHAPE_CATALOG.length)]);
+}
+
+// Доля попыток, когда генератор намеренно предпочитает фигуру, у которой
+// хотя бы одна позиция создаёт комбо-очистку (R05.5, «иногда отдавать
+// фигуры для комбо») — не всегда, чтобы игра оставалась непредсказуемой.
+const COMBO_BIAS_CHANCE = 0.25;
+
+/** Взвешенный случайный выбор — chance каждого элемента пропорционален его весу. */
+function weightedPick(items, weightOf) {
+  const weights = items.map(weightOf);
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < items.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return items[i];
+  }
+  return items[items.length - 1];
+}
+
 /**
- * Возвращает набор из 3 случайных фигур каталога (могут повторяться —
- * как в оригинальной игре). Случайный выбор — деталь этого модуля,
- * наружу выставлен только готовый результат.
+ * Выбирает одну фигуру каталога с учётом текущего поля (R05.5):
+ * 1) сначала оставляет только фигуры, у которых есть хоть одна допустимая
+ *    позиция на этом поле (canPlacePiece/findValidPlacements) — не выдаём
+ *    заведомо непригодную фигуру, пока есть выбор;
+ * 2) внутри этого набора вес фигуры растёт с числом её позиций («гибкие»
+ *    фигуры, которые проще пристроить дальше, чуть более вероятны — «желательно
+ *    отдавать фигуры, которые позволяют продолжать игру»), но каждая
+ *    подходящая фигура всё равно имеет ненулевой шанс — генерация не должна
+ *    становиться слишком предсказуемой или упрощать игру;
+ * 3) иногда (COMBO_BIAS_CHANCE) сознательно сужает выбор до фигур, у которых
+ *    хотя бы одна позиция немедленно очистила бы линию — «иногда отдавать
+ *    фигуры для комбо», не каждый раз.
+ * Если на поле физически не помещается ни одна фигура каталога (крайний
+ * случай — доска уже фактически проиграна), возвращает чистый случайный
+ * выбор: подбирать тут больше не из чего.
+ * @param {import('./board.js').Board} board
+ * @returns {Shape}
+ */
+function pickForBoard(board) {
+  const evaluated = SHAPE_CATALOG.map((source) => {
+    const placements = findValidPlacements(source, board);
+    const comboCapable = placements.some((p) => board.previewClear(source, p.row, p.col).cells.length > 0);
+    return { source, placements, comboCapable };
+  });
+
+  const placeable = evaluated.filter((e) => e.placements.length > 0);
+  if (placeable.length === 0) return pickPureRandom();
+
+  const comboCandidates = placeable.filter((e) => e.comboCapable);
+  const pool = comboCandidates.length > 0 && Math.random() < COMBO_BIAS_CHANCE ? comboCandidates : placeable;
+
+  const picked = weightedPick(pool, (e) => 1 + Math.min(e.placements.length, 10) * 0.5);
+  return cloneShape(picked.source);
+}
+
+/**
+ * Возвращает набор из 3 фигур каталога для лотка (могут повторяться — как
+ * в оригинальной игре). Без board — прежнее чистое случайное поведение
+ * (например, самый первый лоток партии, когда поле заведомо пустое, или
+ * вызов без контекста поля). С board — «умная» генерация (R05.5): каждая
+ * из 3 фигур подбирается через pickForBoard независимо, глядя на одно и то
+ * же текущее состояние поля (все три ещё не размещены, поле одно и то же
+ * для всех трёх).
+ * @param {import('./board.js').Board} [board]
  * @returns {Shape[]}
  */
-export function generateShapeSet() {
+export function generateShapeSet(board) {
   const result = [];
   for (let i = 0; i < 3; i++) {
-    const source = SHAPE_CATALOG[Math.floor(Math.random() * SHAPE_CATALOG.length)];
-    // возвращаем копию, чтобы вызывающий код не мог случайно испортить каталог
-    result.push({ id: source.id, cells: source.cells.map(([r, c]) => [r, c]) });
+    result.push(board ? pickForBoard(board) : pickPureRandom());
   }
   return result;
 }
