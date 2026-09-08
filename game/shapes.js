@@ -183,6 +183,21 @@ function waveMultiplier(cellCount) {
   return waveState.phase === 'large' ? LARGE_PHASE_BOOST : SMALL_PHASE_SUPPRESS;
 }
 
+// Уголки-тримино (3 клетки, L-образные: corner-1..corner-4) тайлятся хуже
+// прямых фигур того же размера — по своей форме они куда чаще оставляют
+// после себя дыры ровно в 1-2 клетки, которые потом некуда закрыть, и это
+// заметно мешает когда-либо собрать полную очистку поля (игрок явно об этом
+// попросил — «шанс выпадения таких углов уменьшить»). Не убираем совсем —
+// просто заметно снижаем вес выбора, остальная логика (в т.ч. фильтр
+// «есть хоть одна допустимая позиция») их не касается.
+const CORNER_SHAPE_IDS = new Set(['corner-1', 'corner-2', 'corner-3', 'corner-4']);
+const CORNER_SHAPE_SUPPRESS = 0.35;
+
+/** Множитель веса для L-образных тримино-уголков — 1 для всех остальных фигур. */
+function cornerSuppressMultiplier(id) {
+  return CORNER_SHAPE_IDS.has(id) ? CORNER_SHAPE_SUPPRESS : 1;
+}
+
 /** Продвигает волну на одну реально выданную фигуру — переключает фазу, когда та кончается. */
 function advanceWave() {
   waveState.shapesLeftInPhase -= 1;
@@ -262,6 +277,7 @@ function pickForBoard(board, context = {}) {
     let weight = 1 + Math.min(e.placements.length, 10) * 0.5;
     if (struggling) weight += e.bestClearSize * 0.8;
     weight *= waveMultiplier(e.source.cells.length);
+    weight *= cornerSuppressMultiplier(e.source.id);
     return weight;
   });
   advanceWave();
