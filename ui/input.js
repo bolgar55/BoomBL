@@ -196,10 +196,14 @@ export function attachDragAndDrop({
     onHover(shapeCells(dragging.shape, row, col).map((c) => ({ ...c, valid })));
   }
 
-  function resetFloat() {
+  // Единая точка сброса — гасит overlay-canvas и снимает приглушение слота
+  // лотка. Оба места, откуда завершается драг (landFloat/returnFloat), идут
+  // через неё, чтобы слот не мог случайно остаться навсегда приглушённым.
+  function resetFloat(el) {
     floatCanvas.classList.remove('drag-float--invalid');
     floatCanvas.style.display = 'none';
     floatCanvas.style.transform = '';
+    if (el) el.classList.remove('tray-slot--dragging');
   }
 
   function animateFloat(from, to, duration, onDone) {
@@ -234,8 +238,7 @@ export function attachDragAndDrop({
     };
     floatCanvas.classList.remove('drag-float--invalid');
     animateFloat({ ...state.current, scale: 1 }, to, LAND_MS, () => {
-      resetFloat();
-      state.el.classList.remove('tray-slot--dragging');
+      resetFloat(state.el);
       onDrop(state.shapeIndex, state.row, state.col);
     });
   }
@@ -256,8 +259,7 @@ export function attachDragAndDrop({
       scale,
     };
     animateFloat({ ...state.current, scale: 1 }, to, RETURN_MS, () => {
-      resetFloat();
-      state.el.classList.remove('tray-slot--dragging');
+      resetFloat(state.el);
     });
   }
 
@@ -287,6 +289,11 @@ export function attachDragAndDrop({
       const shape = shapes[shapeIndex];
       if (!shape) return;
       el.setPointerCapture(event.pointerId);
+
+      // защитный сброс: если предыдущая анимация возврата/посадки была
+      // прервана (например, приложение свернули в момент rAF) и класс
+      // остался висеть на каком-то слоте — новый драг не должен это длить
+      trayEls.forEach((slot) => slot.classList.remove('tray-slot--dragging'));
 
       const cellSize = getCellSize();
       const bounds = shapeBounds(shape);
