@@ -205,20 +205,22 @@ async function main() {
   // ---- верхняя панель под шапкой (R05.8) ----
   // Раньше тут всегда был дневной челлендж — он общий на всех игроков и
   // привязан к календарной дате, поэтому в рамках одной сессии выглядел
-  // «застывшим». Теперь приоритет у закреплённого игроком достижения (см.
-  // ui/achievements.js, кнопка-булавка 📌 в списке): пока что-то закреплено —
-  // показываем его живой прогресс; ничего не закреплено — прежнее поведение,
-  // дневной челлендж как раньше.
+  // «застывшим». Теперь тут достижение: если игрок сам закрепил одно (📌 в
+  // списке, ui/achievements.js) — показываем именно его; если нет — панель
+  // сама выбирает то, что скоро получится (наибольший прогресс/цель среди
+  // ещё не полученных, см. game/achievements.js getDisplayed) — так она
+  // всегда живая, даже без ручного выбора. Дневной челлендж остаётся только
+  // как запасной вариант на случай, если вообще всё уже получено.
   let lastChallenge = null;
 
   async function renderTopPanel() {
-    const pinned = await achievements.getPinned();
-    if (pinned) {
-      const isSecretLocked = pinned.tier === 'secret' && !pinned.unlocked;
-      challengeLabelEl.textContent = isSecretLocked ? '???' : i18n.t(`achievement.${pinned.id}.title`);
-      challengeProgressEl.textContent = pinned.unlocked
+    const displayed = await achievements.getDisplayed();
+    if (displayed) {
+      const isSecretLocked = displayed.tier === 'secret' && !displayed.unlocked;
+      challengeLabelEl.textContent = isSecretLocked ? '???' : i18n.t(`achievement.${displayed.id}.title`);
+      challengeProgressEl.textContent = displayed.unlocked
         ? i18n.t('achievementUnlocked')
-        : i18n.t('achievementProgress', { progress: pinned.progress, goal: pinned.goal });
+        : i18n.t('achievementProgress', { progress: displayed.progress, goal: displayed.goal });
       return;
     }
     if (lastChallenge) {

@@ -179,7 +179,39 @@ export function createAchievements(deps = {}) {
     return def ? toEntry(def) : null;
   }
 
-  return { reportEvent, getAll, setPinned, getPinned };
+  /**
+   * Что показывать в верхней панели прямо сейчас (R05.8): если игрок сам
+   * закрепил достижение — оно и есть ответ. Если нет — автовыбор того,
+   * которое скоро получится: среди ещё не полученных берём с наибольшим
+   * отношением progress/goal (ближе всего к цели). Секретные в автовыбор не
+   * попадают — их прогресс не должен «спойлериться» без явного решения
+   * игрока закрепить именно секрет руками (getPinned/setPinned это всё ещё
+   * разрешают). Если вообще всё уже получено (или каталог пуст) — null,
+   * вызывающий код сам решает, чем заполнить панель в этом случае (в app.js —
+   * прежний дневной челлендж).
+   * @returns {Promise<(AchievementDef & {progress:number, unlocked:boolean, unlockedAt:number|null, pinnedByUser:boolean})|null>}
+   */
+  async function getDisplayed() {
+    await load();
+    if (state.pinned) {
+      const def = ACHIEVEMENTS.find((d) => d.id === state.pinned);
+      if (def) return { ...toEntry(def), pinnedByUser: true };
+    }
+
+    let best = null;
+    let bestRatio = -1;
+    for (const def of ACHIEVEMENTS) {
+      if (state.unlocked[def.id] || def.tier === 'secret') continue;
+      const ratio = (state.metrics[def.metric] ?? 0) / def.goal;
+      if (ratio > bestRatio) {
+        bestRatio = ratio;
+        best = def;
+      }
+    }
+    return best ? { ...toEntry(best), pinnedByUser: false } : null;
+  }
+
+  return { reportEvent, getAll, setPinned, getPinned, getDisplayed };
 }
 
 export { ACHIEVEMENTS };
