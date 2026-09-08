@@ -17,11 +17,15 @@ const DEFAULT_GAME_URL = '[ВПИШИ-АДРЕС-ИГРЫ]';
 
 // Семантические типы вибро-отклика (R28) → конкретные вызовы HapticFeedback.
 // impactOccurred — физическое столкновение (постановка/взрыв линии),
-// notificationOccurred — результат действия (ошибка размещения).
+// notificationOccurred — результат действия (ошибка размещения),
+// selectionChanged — лёгкий тик при наведении на новую валидную позицию во
+// время драга (часто, на каждую новую клетку — impact/notification для этого
+// слишком «тяжёлые» и быстро утомили бы при частом срабатывании).
 const HAPTIC_ACTIONS = {
   placement: (haptics) => haptics.impactOccurred?.('light'),
   lineClear: (haptics) => haptics.impactOccurred?.('heavy'),
   invalidPlacement: (haptics) => haptics.notificationOccurred?.('error'),
+  hoverValid: (haptics) => haptics.selectionChanged?.(),
 };
 
 /**
@@ -76,7 +80,8 @@ export function createTelegramBridge(deps = {}) {
   }
 
   /**
-   * Вибро-отклик (R28). type — один из 'placement' | 'lineClear' | 'invalidPlacement'.
+   * Вибро-отклик (R28). type — один из 'placement' | 'lineClear' |
+   * 'invalidPlacement' | 'hoverValid'.
    * Неизвестный type и отсутствие Telegram/HapticFeedback — безопасный no-op.
    */
   function haptic(type) {

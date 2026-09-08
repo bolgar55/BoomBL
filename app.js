@@ -416,6 +416,13 @@ async function main() {
     telegramBridge.haptic('invalidPlacement');
   }
 
+  // Вибро-тик при наведении на валидную позицию во время драга — только на
+  // переход на НОВУЮ клетку, а не на каждый пиксель движения (onHover зовётся
+  // на каждый pointermove): ключ — набор клеток-кандидатов, повтор с тем же
+  // ключом ничего не шлёт, иначе вибрация дребезжала бы непрерывно, пока
+  // палец просто чуть дрожит над одной и той же валидной позицией.
+  let lastValidHoverKey = null;
+
   attachDragAndDrop({
     boardCanvas,
     dragCanvas,
@@ -428,10 +435,18 @@ async function main() {
     onHover: ({ highlight, comboCells, color }) => {
       render(highlight);
       comboPreview.update(comboCells, color, cellSize);
+
+      const valid = highlight.length > 0 && highlight.every((c) => c.valid);
+      const key = valid ? highlight.map((c) => `${c.row},${c.col}`).join('|') : null;
+      if (valid && key !== lastValidHoverKey) {
+        telegramBridge.haptic('hoverValid');
+      }
+      lastValidHoverKey = key;
     },
     onHoverEnd: () => {
       render();
       comboPreview.stop();
+      lastValidHoverKey = null;
     },
     onDrop: (shapeIndex, row, col) => placeShape(shapeIndex, row, col),
     onInvalidDrop: () => invalidDrop(),
