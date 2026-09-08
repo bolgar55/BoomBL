@@ -272,27 +272,6 @@ async function main() {
     updateComboBadge(comboStreak);
   }
 
-  // R05.6: серия комбо больше не сбрасывается ходом без очистки — только
-  // бездействием. Каждый успешный ход переставляет этот таймер; если игрок
-  // не делает следующий ход COMBO_IDLE_MS — серия обнуляется (score.expireCombo).
-  const COMBO_IDLE_MS = 10000;
-  let comboIdleTimer = null;
-
-  function scheduleComboExpiry() {
-    if (comboIdleTimer) clearTimeout(comboIdleTimer);
-    comboIdleTimer = setTimeout(() => {
-      comboIdleTimer = null;
-      if (score.expireCombo()) updateComboBadge(0);
-    }, COMBO_IDLE_MS);
-  }
-
-  function cancelComboExpiry() {
-    if (comboIdleTimer) {
-      clearTimeout(comboIdleTimer);
-      comboIdleTimer = null;
-    }
-  }
-
   async function showGameOver() {
     const state = await gameOverScreen.show(totalScore);
     if (state.highScore > highScore) {
@@ -330,7 +309,6 @@ async function main() {
     // продолжается; ни одна не влезает — Game Over.
     if (!hasAnyValidMove(board, shapes)) {
       gameOver = true;
-      cancelComboExpiry();
       if (!hadInvalidThisGame) reportAchievements({ gamesWithoutInvalid: 1 });
       reportGameEvent({ gameOver: true });
       showGameOver();
@@ -497,7 +475,6 @@ async function main() {
       }, FULL_CLEAR_PAUSE_MS);
     }
 
-    scheduleComboExpiry(); // R05.6: успешный ход переставляет таймер бездействия комбо
     refillTrayIfEmpty();
     reportGameEvent({ linesCleared, scoreDelta: points + gapBonus, comboStreak, shapesPlaced: 1, gameOver: false });
     checkGameOver();
@@ -560,7 +537,6 @@ async function main() {
 
   // ---- новая партия поверх той же сессии (без перезагрузки страницы) ----
   function resetGame() {
-    cancelComboExpiry();
     board = new Board();
     score = new Score();
     shapes = generateShapeSet(board);
