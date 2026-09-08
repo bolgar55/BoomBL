@@ -13,7 +13,7 @@
 // через config.js (см. этот файл и api/config.js), а не зашито константой здесь.
 
 import { Board, BOARD_SIZE, hasAnyValidMove } from './game/board.js';
-import { generateShapeSet } from './game/shapes.js';
+import { generateShapeSet, resetWaveRhythm } from './game/shapes.js';
 import { Score } from './game/score.js';
 import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js';
 import { attachDragAndDrop, isValidDrop } from './ui/input.js';
@@ -572,6 +572,7 @@ async function main() {
 
   // ---- новая партия поверх той же сессии (без перезагрузки страницы) ----
   function resetGame() {
+    resetWaveRhythm(); // R05.9: новая партия — новый волновой ритм размеров фигур
     board = new Board();
     score = new Score();
     shapes = generateShapeSet(board);

@@ -136,6 +136,62 @@ function effectiveComboBiasChance(movesSinceClear, openness) {
   return Math.min(chance, COMBO_BIAS_CHANCE_MAX);
 }
 
+// Волновой ритм размера фигур (R05.9): без него крупные фигуры (2×3/3×3)
+// иногда «кучкуются» просто по случайности — игроку это ощущается как
+// нечестный всплеск сложности в начале партии, а не как продуманный ритм.
+// Вместо этого ведём фазу «крупных» / «мелких» фигур, которая двигается на
+// каждую реально выданную фигуру: внутри фазы выбор всё ещё случайный (это
+// множитель веса, а не жёсткий фильтр), просто крупные фигуры заметно чаще
+// в фазе «крупных» и заметно реже — в фазе «мелких». Длина фазы случайна
+// (не фиксированный период), чтобы ритм не ощущался метрономом и его нельзя
+// было просчитать. Состояние — на весь модуль (одна партия в один момент
+// времени в этой вкладке), resetWaveRhythm() зовёт app.js на новую партию.
+const LARGE_SHAPE_CELLS = 6; // от rect-2x3 (6 клеток) и крупнее — «крупная» фигура
+const PHASE_LENGTH_MIN = 8;
+const PHASE_LENGTH_MAX = 14;
+
+function randomPhaseLength() {
+  return PHASE_LENGTH_MIN + Math.floor(Math.random() * (PHASE_LENGTH_MAX - PHASE_LENGTH_MIN + 1));
+}
+
+function freshWaveState() {
+  return {
+    phase: Math.random() < 0.5 ? 'large' : 'small',
+    shapesLeftInPhase: randomPhaseLength(),
+  };
+}
+
+let waveState = freshWaveState();
+
+/** Сбрасывает волновой ритм размеров — вызывать на старте новой партии. */
+export function resetWaveRhythm() {
+  waveState = freshWaveState();
+}
+
+// Крупных фигур в каталоге всего 3 из 33 (rect-2x3-h/v, square-3x3) — при
+// слабом множителе волна тонет в шуме случайного выбора и её не заметно на
+// глаз, поэтому множители подобраны так, чтобы в фазе «крупных» они
+// попадались действительно заметно чаще (~40% отдельных фигур лотка), а в
+// фазе «мелких» — почти не попадались (~5%). Сама волна трогает только
+// крупные фигуры — мелкие/средние между собой распределяются как раньше.
+const LARGE_PHASE_BOOST = 7;
+const SMALL_PHASE_SUPPRESS = 0.5;
+
+/** Множитель веса по текущей фазе волны — влияет только на крупные фигуры. */
+function waveMultiplier(cellCount) {
+  if (cellCount < LARGE_SHAPE_CELLS) return 1;
+  return waveState.phase === 'large' ? LARGE_PHASE_BOOST : SMALL_PHASE_SUPPRESS;
+}
+
+/** Продвигает волну на одну реально выданную фигуру — переключает фазу, когда та кончается. */
+function advanceWave() {
+  waveState.shapesLeftInPhase -= 1;
+  if (waveState.shapesLeftInPhase <= 0) {
+    waveState.phase = waveState.phase === 'large' ? 'small' : 'large';
+    waveState.shapesLeftInPhase = randomPhaseLength();
+  }
+}
+
 /** Взвешенный случайный выбор — chance каждого элемента пропорционален его весу. */
 function weightedPick(items, weightOf) {
   const weights = items.map(weightOf);
@@ -166,7 +222,12 @@ function weightedPick(items, weightOf) {
  * 4) в этой же сложной ситуации (см. struggling) дополнительно взвешивает
  *    внутри пула по тому, СКОЛЬКО клеток очистила бы лучшая позиция фигуры —
  *    не просто «может дать комбо», а «даёт заметно освободить поле»
- *    («помогают открыть новые свободные области»).
+ *    («помогают открыть новые свободные области»);
+ * 5) сверху ещё домножает вес на текущую фазу волнового ритма размеров
+ *    (R05.9, waveMultiplier) — крупные фигуры (2×3/3×3) заметно чаще в фазе
+ *    «крупных» и заметно реже в фазе «мелких», фазы случайной длины сменяют
+ *    друг друга, чтобы крупные фигуры не кучковались случайно, а шли
+ *    предсказуемым для ощущений, но не для расчёта, ритмом.
  * Если на поле физически не помещается ни одна фигура каталога (крайний
  * случай — доска уже фактически проиграна), возвращает чистый случайный
  * выбор: подбирать тут больше не из чего.
@@ -200,8 +261,10 @@ function pickForBoard(board, context = {}) {
   const picked = weightedPick(pool, (e) => {
     let weight = 1 + Math.min(e.placements.length, 10) * 0.5;
     if (struggling) weight += e.bestClearSize * 0.8;
+    weight *= waveMultiplier(e.source.cells.length);
     return weight;
   });
+  advanceWave();
   return cloneShape(picked.source);
 }
 
