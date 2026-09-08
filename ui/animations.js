@@ -1,9 +1,12 @@
 // ui/animations.js
 // Анимации интерфейса (R19): появление фигур, взрыв линий с частицами,
-// тряска при неудачном ходе, дополнительные партиклы при комбо.
+// тряска при неудачном ходе, дополнительные партиклы при комбо, превью
+// потенциального комбо при перетаскивании фигуры (R05.3).
 // Работает поверх DOM-элементов/Canvas, переданных вызывающим кодом —
 // не хранит состояние партии. Визуальный слой, не покрывается юнит-тестами
 // (см. interfaces.md, «Швы для тестов»).
+
+import { drawComboPreview } from './render.js';
 
 const APPEAR_CLASS = 'anim-appear';
 const SHAKE_CLASS = 'anim-shake';
@@ -109,4 +112,63 @@ export function playLineClear(ctx, cells, cellSize, isCombo, onDone) {
   }
 
   requestAnimationFrame(frame);
+}
+
+// Скорость «дыхания» подсветки превью — рад/сек синусоиды (~2с на цикл).
+const COMBO_PREVIEW_BREATH_SPEED = 3.2;
+
+/**
+ * Превью потенциального комбо при перетаскивании фигуры (R05.3): пока
+ * ui/input.js на каждое движение курсора зовёт update() с клетками, которые
+ * исчезли бы после установки (пусто — превью не показываем), здесь крутится
+ * независимый rAF-цикл «дыхания» (пульс по синусоиде), который их рисует
+ * поверх поля через drawComboPreview. Цикл сам стартует при первых клетках
+ * и сам останавливается, когда клеток не стало — не крутится вхолостую,
+ * когда превью нечего показывать. stop() — жёсткая остановка при завершении
+ * драга (в т.ч. вместе с очисткой канваса).
+ * @param {CanvasRenderingContext2D} ctx - effects-канвас поверх поля
+ * @returns {{update(cells:{row:number,col:number}[], color:string, cellSize:number):void, stop():void}}
+ */
+export function createComboPreview(ctx) {
+  let cells = [];
+  let color = '#FFFFFF';
+  let cellSize = 0;
+  let rafId = null;
+  let phaseStart = 0;
+
+  function clear() {
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  }
+
+  function frame(now) {
+    if (!cells.length) {
+      rafId = null;
+      clear();
+      return;
+    }
+    clear();
+    const pulse = (Math.sin(((now - phaseStart) / 1000) * COMBO_PREVIEW_BREATH_SPEED) + 1) / 2;
+    drawComboPreview(ctx, cells, cellSize, color, pulse);
+    rafId = requestAnimationFrame(frame);
+  }
+
+  return {
+    update(nextCells, nextColor, nextCellSize) {
+      cells = nextCells;
+      color = nextColor;
+      cellSize = nextCellSize;
+      if (cells.length && rafId === null) {
+        phaseStart = performance.now();
+        rafId = requestAnimationFrame(frame);
+      }
+    },
+    stop() {
+      cells = [];
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      clear();
+    },
+  };
 }

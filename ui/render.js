@@ -189,3 +189,53 @@ export function drawShapeGhost(ctx, shape, row, col, cellSize, color) {
   }
   ctx.restore();
 }
+
+/** Смешивает hex-цвет с белым на amount (0..1) — светлее исходного, для мерцающего контура. */
+function lightenColor(hex, amount) {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = (num >> 16) & 0xff;
+  const g = (num >> 8) & 0xff;
+  const b = num & 0xff;
+  const mix = (c) => Math.round(c + (255 - c) * amount);
+  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+}
+
+/**
+ * Превью потенциальной комбо-очистки при перетаскивании (R05.3): клетки,
+ * которые исчезнут после установки фигуры, подсвечиваются её цветом —
+ * мягкое свечение (shadowBlur) + мерцающий светлеющий контур, оба
+ * пульсируют по фазе pulse (0..1, обычно синусоида) — «дыхание» подсветки.
+ * Чистая функция одного кадра; сам цикл дыхания ведёт ui/animations.js
+ * (createComboPreview), не тестируется юнит-тестами (визуальный эффект).
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {{row:number, col:number}[]} cells
+ * @param {number} cellSize
+ * @param {string} color
+ * @param {number} pulse
+ */
+export function drawComboPreview(ctx, cells, cellSize, color, pulse) {
+  if (!cells.length) return;
+  ctx.save();
+
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 10 + pulse * 14;
+  ctx.globalAlpha = 0.3 + pulse * 0.25;
+  ctx.fillStyle = color;
+  for (const { row, col } of cells) {
+    const { x, y, size } = cellRect(row, col, cellSize);
+    drawRoundedRect(ctx, x, y, size, size, RADIUS);
+    ctx.fill();
+  }
+
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 0.55 + pulse * 0.45;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = lightenColor(color, 0.35 + pulse * 0.3);
+  for (const { row, col } of cells) {
+    const { x, y, size } = cellRect(row, col, cellSize);
+    drawRoundedRect(ctx, x + 1, y + 1, size - 2, size - 2, RADIUS);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}

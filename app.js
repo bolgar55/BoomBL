@@ -16,7 +16,7 @@ import { generateShapeSet } from './game/shapes.js';
 import { Score } from './game/score.js';
 import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js';
 import { findHint, attachDragAndDrop } from './ui/input.js';
-import { playAppear, playShake, playLineClear } from './ui/animations.js';
+import { playAppear, playShake, playLineClear, createComboPreview } from './ui/animations.js';
 import { createPersistence } from './game/persistence.js';
 import { createTelegramBridge } from './telegram/bridge.js';
 import { createI18n } from './i18n/index.js';
@@ -39,6 +39,11 @@ const boardCanvas = document.getElementById('board-canvas');
 const boardCtx = boardCanvas.getContext('2d');
 const effectsCanvas = document.getElementById('effects-canvas');
 const effectsCtx = effectsCanvas.getContext('2d');
+// Превью потенциального комбо при перетаскивании (R05.3) делит этот же
+// overlay-канвас со взрывом очищенных линий (playLineClear) — они не
+// пересекаются во времени: превью гаснет в onHoverEnd раньше, чем commit
+// доходит до анимации взрыва после реальной постановки.
+const comboPreview = createComboPreview(effectsCtx);
 const dragCanvas = document.getElementById('drag-float');
 const boardWrap = document.getElementById('board-wrap');
 const trayEls = Array.from(document.querySelectorAll('.tray-slot'));
@@ -334,8 +339,14 @@ async function main() {
     getShapeColor: (i) => shapeColors[i],
     getCellSize: () => cellSize,
     isLocked: () => gameOver,
-    onHover: (highlight) => render(highlight),
-    onHoverEnd: () => render(),
+    onHover: ({ highlight, comboCells, color }) => {
+      render(highlight);
+      comboPreview.update(comboCells, color, cellSize);
+    },
+    onHoverEnd: () => {
+      render();
+      comboPreview.stop();
+    },
     onDrop: (shapeIndex, row, col) => placeShape(shapeIndex, row, col),
     onInvalidDrop: () => invalidDrop(),
   });

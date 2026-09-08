@@ -79,6 +79,75 @@ export class Board {
   }
 
   /**
+   * Не трогая реальное состояние поля, определяет, какие строки/столбцы
+   * были бы полностью заполнены и какие клетки исчезли бы, если поставить
+   * фигуру в (row, col) прямо сейчас. Используется превью комбо при
+   * перетаскивании (R05.3) — вызывающий код показывает подсветку по
+   * результату, ничего не размещая на самом деле; фиксирует ход, как и
+   * раньше, только place(). На недопустимой позиции возвращает пустой
+   * результат вместо ошибки (в отличие от place()) — это чисто
+   * информационный запрос, а не попытка хода.
+   * @param {{cells: number[][]}} shape
+   * @param {number} row
+   * @param {number} col
+   * @returns {{clearedRows: number[], clearedCols: number[], cells: {row:number, col:number}[]}}
+   */
+  previewClear(shape, row, col) {
+    if (!this.canPlace(shape, row, col)) {
+      return { clearedRows: [], clearedCols: [], cells: [] };
+    }
+
+    const willOccupy = (r, c) => {
+      if (this.grid[r][c]) return true;
+      for (const [dr, dc] of shape.cells) {
+        if (row + dr === r && col + dc === c) return true;
+      }
+      return false;
+    };
+
+    const clearedRows = [];
+    for (let r = 0; r < SIZE; r++) {
+      let full = true;
+      for (let c = 0; c < SIZE; c++) {
+        if (!willOccupy(r, c)) {
+          full = false;
+          break;
+        }
+      }
+      if (full) clearedRows.push(r);
+    }
+
+    const clearedCols = [];
+    for (let c = 0; c < SIZE; c++) {
+      let full = true;
+      for (let r = 0; r < SIZE; r++) {
+        if (!willOccupy(r, c)) {
+          full = false;
+          break;
+        }
+      }
+      if (full) clearedCols.push(c);
+    }
+
+    const cells = [];
+    const seen = new Set();
+    const addCell = (r, c) => {
+      const key = `${r},${c}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      cells.push({ row: r, col: c });
+    };
+    for (const r of clearedRows) {
+      for (let c = 0; c < SIZE; c++) addCell(r, c);
+    }
+    for (const c of clearedCols) {
+      for (let r = 0; r < SIZE; r++) addCell(r, c);
+    }
+
+    return { clearedRows, clearedCols, cells };
+  }
+
+  /**
    * Определяет, есть ли на поле хоть одна позиция для хоть одной из
    * переданных фигур. Перебирает все 64 клетки для каждой фигуры (§3 спецификации).
    * @param {{cells: number[][]}[]} shapes

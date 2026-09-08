@@ -112,7 +112,10 @@ function overlapsBoard(row, col, bounds) {
  * @param {(index:number) => string} opts.getShapeColor - цвет фигуры по индексу лотка
  * @param {() => number} opts.getCellSize - текущий размер клетки поля в пикселях
  * @param {() => boolean} opts.isLocked - блокировка ввода (например, game over)
- * @param {(highlight: {row:number, col:number, valid:boolean}[]) => void} opts.onHover
+ * @param {(info: {highlight: {row:number, col:number, valid:boolean}[], comboCells: {row:number, col:number}[], color: string}) => void} opts.onHover -
+ *   highlight — клетки под самой фигурой (зелёная/красная подсветка допустимости);
+ *   comboCells — клетки, которые исчезнут, если поставить фигуру прямо сейчас
+ *   (R05.3, пусто — комбо не будет); color — цвет перетаскиваемой фигуры для подсветки comboCells
  * @param {() => void} opts.onHoverEnd
  * @param {(shapeIndex:number, row:number, col:number) => void} opts.onDrop
  * @param {(shapeIndex:number) => void} opts.onInvalidDrop
@@ -193,7 +196,15 @@ export function attachDragAndDrop({
 
     floatCanvas.classList.toggle('drag-float--invalid', overBoard && !valid);
 
-    onHover(shapeCells(dragging.shape, row, col).map((c) => ({ ...c, valid })));
+    // превью комбо (R05.3): что исчезнет, если поставить фигуру прямо
+    // сейчас — считаем только на валидной позиции, реальное поле не трогаем
+    const comboCells = valid ? board.previewClear(dragging.shape, row, col).cells : [];
+
+    onHover({
+      highlight: shapeCells(dragging.shape, row, col).map((c) => ({ ...c, valid })),
+      comboCells,
+      color: dragging.color,
+    });
   }
 
   // Единая точка сброса — гасит overlay-canvas и снимает приглушение слота
@@ -307,6 +318,7 @@ export function attachDragAndDrop({
         pointerId: event.pointerId,
         shapeIndex,
         shape,
+        color,
         bounds,
         el,
         row: null,
