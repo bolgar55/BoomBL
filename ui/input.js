@@ -240,6 +240,7 @@ export function attachDragAndDrop({
     floatCanvas.classList.remove('drag-float--invalid');
     animateFloat({ ...state.current, scale: 1 }, to, LAND_MS, () => {
       resetFloat();
+      state.el.classList.remove('tray-slot--dragging');
       onDrop(state.shapeIndex, state.row, state.col);
     });
   }
