@@ -269,8 +269,12 @@ async function main() {
   // Пока активен временный ивент партии (game/events.js) — он занимает эту
   // же панель поверх ачивки/челленджа (R «ивент виден через подсказку»):
   // выше приоритетом, потому что он временный и требует внимания игрока
-  // прямо сейчас, в отличие от «фонового» прогресса достижений.
+  // прямо сейчас, в отличие от «фонового» прогресса достижений. За пару
+  // ходов до старта — лёгкий безадресный намёк (R «добавить намёк заранее»),
+  // ниже приоритетом активного ивента, но выше ачивки/челленджа.
   async function renderTopPanel() {
+    challengePanelEl.classList.remove('challenge-panel--event', 'challenge-panel--event-hint');
+
     const activeEvent = eventDirector.getActive();
     if (activeEvent) {
       challengePanelEl.classList.add('challenge-panel--event');
@@ -278,7 +282,12 @@ async function main() {
       challengeProgressEl.textContent = i18n.t('eventMovesLeft', { goal: activeEvent.movesRemaining });
       return;
     }
-    challengePanelEl.classList.remove('challenge-panel--event');
+    if (eventDirector.isHintActive(shapesPlacedThisGame)) {
+      challengePanelEl.classList.add('challenge-panel--event-hint');
+      challengeLabelEl.textContent = i18n.t('eventHint');
+      challengeProgressEl.textContent = '';
+      return;
+    }
 
     const displayed = await achievements.getDisplayed();
     if (displayed) {

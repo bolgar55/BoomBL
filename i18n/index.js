@@ -42,6 +42,7 @@ const DICTIONARIES = {
     'event.colorBonusRush.title': 'Цветной бонус ×2!',
     'event.colorBonusRush.desc': 'Следующие {goal} ходов бонус за полное удаление цвета удвоен',
     eventMovesLeft: 'Осталось ходов: {goal}',
+    eventHint: '✨ Скоро что-то произойдёт...',
 
     achievements: 'Достижения',
     achievementsBtnLabel: 'Достижения',
@@ -159,6 +160,7 @@ const DICTIONARIES = {
     'event.colorBonusRush.title': 'Color bonus rush!',
     'event.colorBonusRush.desc': 'Next {goal} moves: the full-color-clear bonus is doubled',
     eventMovesLeft: '{goal} moves left',
+    eventHint: '✨ Something is coming soon...',
 
     achievements: 'Achievements',
     achievementsBtnLabel: 'Achievements',

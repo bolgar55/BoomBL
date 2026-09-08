@@ -192,6 +192,21 @@ body {
   font-weight: 700;
 }
 
+/* Лёгкий безадресный намёк за пару ходов до старта ивента — заметно мягче
+   самого ивента (медленнее и бледнее), чтобы не путаться с уже начавшимся. */
+@keyframes eventHintFade {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+#challenge-panel.challenge-panel--event-hint {
+  background: rgba(165, 94, 234, 0.14);
+}
+
+#challenge-panel.challenge-panel--event-hint #challenge-label {
+  animation: eventHintFade 2.6s ease-in-out infinite;
+}
+
 #status-line {
   color: var(--text-muted);
   font-size: 13px;

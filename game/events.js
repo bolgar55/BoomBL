@@ -20,6 +20,11 @@ const TRIGGER_MOVE_MIN = 5;
 const TRIGGER_MOVE_MAX = 15;
 const DURATION_MIN = 6;
 const DURATION_MAX = 8;
+// За сколько ходов до старта показывать лёгкий безадресный намёк («скоро
+// что-то произойдёт») — не раскрывает ни тип, ни точный ход, просто готовит
+// игрока к тому, что ивент близко (просьба игрока — «добавить лёгкий намёк
+// заранее», а не оставлять его полной внезапностью).
+const HINT_LEAD_MOVES = 2;
 
 function randomBetween(min, max) {
   return min + Math.floor(Math.random() * (max - min + 1));
@@ -98,5 +103,27 @@ export function createEventDirector() {
     return active?.type === 'bigShapeRain';
   }
 
-  return { reset, onShapePlaced, getActive, getScoreMultiplier, getColorBonusMultiplier, isBigShapeRainActive };
+  /**
+   * Безадресный намёк «скоро что-то произойдёт» — активен ровно
+   * HINT_LEAD_MOVES ходов непосредственно перед стартом (и только пока
+   * ивент этой партии ещё не сработал ни разу). Не привязан к
+   * onShapePlaced — можно спрашивать в любой момент рендера верхней панели,
+   * просто по текущему счётчику ходов партии.
+   * @param {number} shapesPlacedThisGame
+   * @returns {boolean}
+   */
+  function isHintActive(shapesPlacedThisGame) {
+    if (active || firedThisGame) return false;
+    return shapesPlacedThisGame >= triggerMove - HINT_LEAD_MOVES && shapesPlacedThisGame < triggerMove;
+  }
+
+  return {
+    reset,
+    onShapePlaced,
+    getActive,
+    getScoreMultiplier,
+    getColorBonusMultiplier,
+    isBigShapeRainActive,
+    isHintActive,
+  };
 }
