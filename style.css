@@ -61,6 +61,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
   min-height: 44px;
 }
@@ -91,9 +92,68 @@ body {
   font-weight: 700;
 }
 
+/* ---------- Лучший результат (R12/R30) ---------- */
+
+#high-score-panel {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+#high-score-value {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* ---------- Действия шапки: подсказка, язык, звук ---------- */
+
+#top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#language-btn {
+  padding: 10px 12px;
+  min-width: 44px;
+}
+
+/* ---------- Ежедневный челлендж (R14) ---------- */
+
+#challenge-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--cell-empty);
+  font-size: 13px;
+}
+
+#challenge-label {
+  color: var(--text);
+}
+
+#challenge-progress {
+  color: var(--score-color);
+  font-weight: 700;
+}
+
+/* ---------- Донат (R43) ---------- */
+
+#donate-panel {
+  display: flex;
+  justify-content: center;
+}
+
 #status-line {
   color: var(--text-muted);
   font-size: 13px;
+  min-height: 18px;
 }
 
 button {
@@ -169,14 +229,68 @@ button:disabled {
   opacity: 0.35;
 }
 
-/* ---------- Строка состояния (game over — минимальная заглушка) ----------
-   Полноценный экран Game Over с «Играть снова»/«Поделиться» — зона другого
-   тикета (R21/R27, интеграция с MainButton и telegram-bridge). Здесь только
-   останавливаем ввод и даём понять, что партия окончена (см. R10). */
-
 #status-line[data-state='over'] {
   color: var(--danger);
   font-weight: 700;
+}
+
+/* ---------- Экран Game Over (R21/R27) ----------
+   DOM строит сам ui/gameover.js (createGameOverScreen), сюда монтируется
+   через container: #overlay-root — здесь только оформление того, что он
+   создаёт (.gameover-overlay, заголовок, [data-role="result"|"share"]). */
+
+.gameover-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(10, 10, 20, 0.82);
+  color: #fff;
+  z-index: 100;
+}
+
+:root[data-theme='light'] .gameover-overlay {
+  background: rgba(240, 240, 245, 0.92);
+  color: var(--text);
+}
+
+.gameover-overlay[hidden] {
+  display: none;
+}
+
+.gameover-overlay h2 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.gameover-overlay p[data-role='result'] {
+  margin: 0;
+  font-size: 18px;
+  color: var(--score-color);
+  font-weight: 700;
+}
+
+.gameover-overlay button[data-role='share'] {
+  min-width: 220px;
+}
+
+/* ---------- Переключатель звука (R20) ----------
+   Кнопку создаёт ui/sound.js (mountToggleButton) внутри #sound-toggle-slot —
+   здесь только размер под тач-зону (R17) и внешний вид. */
+
+.sound-toggle {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px;
+  font-size: 18px;
+  line-height: 1;
+  background: var(--cell-empty);
+  color: var(--text);
 }
 
 /* ---------- Анимации (R19) ---------- */

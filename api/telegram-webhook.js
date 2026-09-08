@@ -9,7 +9,11 @@
 // а не юнит-тестом (interfaces.md: швы для тестов).
 import { createBotLogic } from '../bot/bot-logic.js';
 
-const botLogic = createBotLogic();
+// GAME_URL — открытое место спецификации (см. telegram/bridge.js), передаём
+// его сюда из переменной окружения Vercel (тикет 07, интеграция): сам
+// bot-logic.js для этого не меняется, только точка вызова его фабрики —
+// gameUrl уже был инжектируемым параметром её deps.
+const botLogic = createBotLogic({ gameUrl: process.env.GAME_URL || undefined });
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
