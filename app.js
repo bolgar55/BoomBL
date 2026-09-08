@@ -33,7 +33,9 @@ import { createPersistence } from './game/persistence.js';
 import { createTelegramBridge } from './telegram/bridge.js';
 import { createI18n } from './i18n/index.js';
 import { createChallenges } from './game/challenges.js';
+import { createAchievements } from './game/achievements.js';
 import { createGameOverScreen } from './ui/gameover.js';
+import { createAchievementsScreen, showAchievementUnlock } from './ui/achievements.js';
 import { createSoundEngine } from './ui/sound.js';
 import { loadConfig } from './config.js';
 
@@ -73,6 +75,7 @@ const scoreValueEl = document.getElementById('score-value');
 const comboValueEl = document.getElementById('combo-value');
 const highScoreLabelEl = document.getElementById('high-score-label');
 const highScoreValueEl = document.getElementById('high-score-value');
+const achievementsBtn = document.getElementById('achievements-btn');
 const languageBtn = document.getElementById('language-btn');
 const soundSlot = document.getElementById('sound-toggle-slot');
 const challengeLabelEl = document.getElementById('challenge-label');
@@ -94,6 +97,11 @@ let gameOver = false;
 // генерацию лотка (game/shapes.js) в сторону спасительных фигур, когда
 // игроку давно не удаётся ни одной комбо-очистки.
 let movesSinceClear = 0;
+// R05.7: метрики для достижений, которые не хранит ни Board, ни Score —
+// сбрасываются в resetGame() вместе с остальным состоянием партии.
+let consecutiveMoves = 0; // подряд успешных ходов без единого недопустимого дропа
+let hadInvalidThisGame = false; // хоть одна неудачная попытка за эту партию
+let shapesPlacedThisGame = 0; // фигур поставлено именно в этой партии (для «идеального старта»)
 
 function currentTheme() {
   return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
@@ -151,6 +159,7 @@ async function main() {
   const telegramBridge = createTelegramBridge({ gameUrl: config.gameUrl || undefined });
   const i18n = createI18n({ persistence });
   const challenges = createChallenges({ persistence });
+  const achievements = createAchievements({ persistence });
   const soundEngine = createSoundEngine({ persistence });
 
   // Telegram SDK: ready()/expand() при старте (R02/R24/R25); вне Telegram —
@@ -180,6 +189,7 @@ async function main() {
   function applyTexts() {
     scoreLabelEl.textContent = i18n.t('score');
     highScoreLabelEl.textContent = i18n.t('highScore');
+    achievementsBtn.setAttribute('aria-label', i18n.t('achievementsBtnLabel'));
     languageBtn.textContent = i18n.getLanguage().toUpperCase();
     languageBtn.setAttribute('aria-label', i18n.t('language'));
     updateScoreUI(score.comboStreak ?? 0);
@@ -214,6 +224,28 @@ async function main() {
     onRestart: resetGame,
     playGameOverSound: () => soundEngine.playGameOver(),
   });
+
+  // ---- достижения (R05.7): постоянный прогресс + экран списка + тосты ----
+  const achievementsScreen = createAchievementsScreen({
+    container: overlayRoot,
+    i18n,
+    getAchievements: () => achievements.getAll(),
+  });
+  achievementsBtn.addEventListener('click', () => achievementsScreen.show());
+
+  /**
+   * Прогоняет событие через трекер достижений и показывает тост для каждого,
+   * что разблокировался именно этим вызовом — reportEvent сам гарантирует,
+   * что одно и то же достижение не всплывёт дважды (см. game/achievements.js).
+   * @param {Record<string, number>} deltas
+   */
+  async function reportAchievements(deltas) {
+    const newly = await achievements.reportEvent(deltas);
+    for (const def of newly) {
+      showAchievementUnlock({ container: document.body, i18n, def });
+      telegramBridge.haptic('lineClear'); // тот же «тяжёлый» impact, что и на очистке линии — разблокировка тоже событие-праздник
+    }
+  }
 
   // R19: очки не «прыгают» мгновенно, а плавно докручиваются от прежнего
   // значения к новому (animateScoreCountUp сама не делает ничего, если
@@ -299,6 +331,7 @@ async function main() {
     if (!hasAnyValidMove(board, shapes)) {
       gameOver = true;
       cancelComboExpiry();
+      if (!hadInvalidThisGame) reportAchievements({ gamesWithoutInvalid: 1 });
       reportGameEvent({ gameOver: true });
       showGameOver();
     }
@@ -306,6 +339,7 @@ async function main() {
 
   function refillTrayIfEmpty() {
     if (shapes.every((s) => s === null)) {
+      reportAchievements({ traySetsUsed: 1 });
       // «Умная» генерация (R05.5) смотрит на текущее поле и на то, как давно
       // не было очистки линии — see game/shapes.js pickForBoard.
       shapes = generateShapeSet(board, { movesSinceClear });
@@ -353,7 +387,14 @@ async function main() {
 
     const linesCleared = clearedRows.length + clearedCols.length;
     const { points, comboStreak } = score.addMove({ cellsPlaced, linesCleared });
+    // Захватываем ДО обновления movesSinceClear — «камбэк» (R05.7) считает
+    // именно то, что было накоплено ПЕРЕД этим ходом, не после его сброса.
+    const wasStruggling = movesSinceClear >= 6;
     movesSinceClear = linesCleared > 0 ? 0 : movesSinceClear + 1;
+    consecutiveMoves += 1; // недопустимые попытки (invalidDrop) сбрасывают эту серию в 0
+    shapesPlacedThisGame += 1;
+    const isLastSlot = shapes.every((s) => s === null);
+    const isBigShape = cellsPlaced >= 6;
 
     const gapBonus = isGapFill ? pocket.length * GAP_FILL_BONUS_PER_CELL : 0;
 
@@ -407,6 +448,21 @@ async function main() {
     totalScore += points + gapBonus;
     updateScoreUI(comboStreak);
 
+    reportAchievements({
+      totalShapesPlaced: 1,
+      totalLinesCleared: linesCleared,
+      'max:maxLinesInOneMove': linesCleared,
+      'max:maxComboStreak': comboStreak,
+      'max:maxSingleMoveScore': points + gapBonus,
+      'max:maxConsecutiveMoves': consecutiveMoves,
+      lifetimeScore: points + gapBonus,
+      'max:bestGameScore': totalScore,
+      ...(gapBonus > 0 ? { totalGapBonuses: 1 } : {}),
+      ...(isBigShape ? { bigShapesPlaced: 1 } : {}),
+      ...(isLastSlot ? { lastSlotPlacements: 1 } : {}),
+      ...(linesCleared > 0 && wasStruggling ? { comebacks: 1 } : {}),
+    });
+
     // Полная очистка поля (R06) — самый мощный визуальный отклик в игре,
     // плюс отдельный флэт-бонус +1500. Не срабатывает на самом ходе,
     // который лишь размещает фигуру: только когда после него поле
@@ -416,7 +472,12 @@ async function main() {
     // Короткая пауза (FULL_CLEAR_PAUSE_MS) отделяет обычный взрыв линии от
     // большого праздничного отклика, чтобы они не слипались в один кадр —
     // остальная игровая логика (тайл, проверка game over) паузу не ждёт.
-    if (linesCleared > 0 && board.isEmpty()) {
+    const isFullClear = linesCleared > 0 && board.isEmpty();
+    if (isFullClear) {
+      reportAchievements({
+        totalFullClears: 1,
+        ...(shapesPlacedThisGame <= 5 ? { perfectStarts: 1 } : {}),
+      });
       setTimeout(() => {
         if (gameOver) return; // партия уже перезапущена — не начисляем бонус поверх новой
         fxEngine.add(createFullClearBurstLayer(cellSize, BOARD_SIZE));
@@ -446,6 +507,8 @@ async function main() {
     playShake(boardWrap);
     fxEngine.add(createInvalidPulseLayer(cellSize, BOARD_SIZE));
     telegramBridge.haptic('invalidPlacement');
+    consecutiveMoves = 0;
+    hadInvalidThisGame = true;
   }
 
   // Вибро-тик при наведении на валидную позицию во время драга — только на
@@ -484,6 +547,17 @@ async function main() {
     onInvalidDrop: () => invalidDrop(),
   });
 
+  // R05.7: метрики «начала партии» — общие для самого первого запуска и
+  // каждого resetGame(). lateNightGames — секретное достижение за игру
+  // глубокой ночью по времени устройства игрока.
+  function reportNewGameStart() {
+    const hour = new Date().getHours();
+    reportAchievements({
+      gamesPlayed: 1,
+      ...(hour >= 0 && hour < 4 ? { lateNightGames: 1 } : {}),
+    });
+  }
+
   // ---- новая партия поверх той же сессии (без перезагрузки страницы) ----
   function resetGame() {
     cancelComboExpiry();
@@ -494,6 +568,9 @@ async function main() {
     colorGrid = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
     totalScore = 0;
     movesSinceClear = 0;
+    consecutiveMoves = 0;
+    hadInvalidThisGame = false;
+    shapesPlacedThisGame = 0;
     // Сброс счёта — сразу, без анимации отсчёта вниз (animateScoreCountUp
     // внутри updateScoreUI ничего не делает при from===to).
     displayedScore = 0;
@@ -503,12 +580,14 @@ async function main() {
     render();
     renderTray();
     playAppear(trayEls);
+    reportNewGameStart();
   }
 
   window.addEventListener('resize', resize);
   applyTexts();
   resize();
   playAppear(trayEls);
+  reportNewGameStart(); // партия из самого первого запуска main() тоже считается
 }
 
 main();

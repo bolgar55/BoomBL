@@ -189,7 +189,7 @@ export function createLineClearLayer(cells, cellSize, meta = {}) {
         if (rElapsed < 0) continue;
         const t = rElapsed / RING_MS;
         if (t >= 1) continue;
-        const radius = ring.maxRadius * easeOutCubic(t);
+        const radius = Math.max(0, ring.maxRadius * easeOutCubic(t));
         ctx.save();
         ctx.globalAlpha = (1 - t) * 0.55;
         ctx.strokeStyle = ring.color;
@@ -221,7 +221,12 @@ export function createPlacementPulseLayer(cells, cellSize, color) {
   const start = performance.now();
   return {
     draw(now, ctx) {
-      const t = (now - start) / PLACEMENT_PULSE_MS;
+      // now может прийти чуть раньше start на самом первом кадре после
+      // add() (таймстамп rAF — момент начала кадра, а не вызова JS) — без
+      // нижней границы t уходил в минус, easeOutCubic(t<0) — тоже в минус,
+      // и radius мог стать отрицательным: ctx.arc() с отрицательным
+      // радиусом бросает исключение в Chrome.
+      const t = Math.max(0, (now - start) / PLACEMENT_PULSE_MS);
       if (t >= 1) return false;
       const eased = easeOutCubic(t);
       ctx.save();
@@ -230,7 +235,7 @@ export function createPlacementPulseLayer(cells, cellSize, color) {
       for (const { row, col } of cells) {
         const cx = col * cellSize + cellSize / 2;
         const cy = row * cellSize + cellSize / 2;
-        const radius = (cellSize / 2) * (0.25 + eased * 0.85);
+        const radius = Math.max(0, (cellSize / 2) * (0.25 + eased * 0.85));
         ctx.globalAlpha = (1 - t) * 0.7;
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -305,7 +310,9 @@ export function createFullClearBurstLayer(cellSize, boardSize) {
 
   return {
     draw(now, ctx) {
-      const elapsed = now - start;
+      // Math.max(0, ...) — см. комментарий в createPlacementPulseLayer: на
+      // самом первом кадре now может прийти чуть раньше start.
+      const elapsed = Math.max(0, now - start);
       if (elapsed >= FULL_CLEAR_MS) return false;
 
       const flashT = elapsed / 260;
@@ -324,7 +331,7 @@ export function createFullClearBurstLayer(cellSize, boardSize) {
         ctx.strokeStyle = '#FFD700';
         ctx.lineWidth = 6;
         ctx.beginPath();
-        ctx.arc(centerX, centerY, maxRadius * easeOutCubic(ringT), 0, Math.PI * 2);
+        ctx.arc(centerX, centerY, Math.max(0, maxRadius * easeOutCubic(ringT)), 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
       }
