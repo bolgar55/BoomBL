@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Block Blast</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="top-bar">
+      <div id="score-panel">
+        <span id="score-label">Очки</span>
+        <span id="score-value">0</span>
+        <span id="combo-value" hidden></span>
+      </div>
+      <button id="hint-btn" type="button">Подсказка</button>
+    </header>
+
+    <main id="board-wrap">
+      <canvas id="board-canvas"></canvas>
+      <canvas id="effects-canvas" aria-hidden="true"></canvas>
+      <canvas id="drag-ghost" aria-hidden="true"></canvas>
+    </main>
+
+    <p id="status-line"></p>
+
+    <footer id="tray">
+      <canvas class="tray-slot" data-index="0"></canvas>
+      <canvas class="tray-slot" data-index="1"></canvas>
+      <canvas class="tray-slot" data-index="2"></canvas>
+    </footer>
+  </div>
+
+  <script type="module">
+    // Точка входа приложения (ui — сама ничего не выставляет другим модулям,
+    // см. interfaces.md). Использует game/board.js, game/shapes.js, game/score.js
+    // как есть, через их публичные сигнатуры, и модули ui/render.js, ui/input.js,
+    // ui/animations.js для отрисовки, ввода и анимаций.
+    //
+    // persistence/challenges/i18n/telegram-bridge — другие тикеты, здесь не
+    // используются: счёт и лучший результат живут только в памяти этой сессии,
+    // тексты — на русском без словаря (R44 закрывается отдельно).
+
+    import { Board, BOARD_SIZE } from './game/board.js';
+    import { generateShapeSet } from './game/shapes.js';
+    import { Score } from './game/score.js';
+    import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js';
+    import { findHint, attachDragAndDrop } from './ui/input.js';
+    import { playAppear, playShake, playLineClear } from './ui/animations.js';
+
+    const boardCanvas = document.getElementById('board-canvas');
+    const boardCtx = boardCanvas.getContext('2d');
+    const effectsCanvas = document.getElementById('effects-canvas');
+    const effectsCtx = effectsCanvas.getContext('2d');
+    const dragCanvas = document.getElementById('drag-ghost');
+    const boardWrap = document.getElementById('board-wrap');
+    const trayEls = Array.from(document.querySelectorAll('.tray-slot'));
+    const scoreValueEl = document.getElementById('score-value');
+    const comboValueEl = document.getElementById('combo-value');
+    const hintBtn = document.getElementById('hint-btn');
+    const statusLine = document.getElementById('status-line');
+
+    // ---- состояние партии (партия не сохраняется между запусками — §12) ----
+    const board = new Board();
+    const score = new Score();
+    let shapes = generateShapeSet();
+    let shapeColors = shapes.map(() => randomBlockColor());
+    let colorGrid = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
+    let totalScore = 0;
+    let cellSize = 0;
+    let gameOver = false;
+
+    function currentTheme() {
+      return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+    }
+
+    function render(highlight) {
+      drawBoard(boardCtx, board, colorGrid, cellSize, currentTheme(), highlight);
+    }
+
+    function renderTray() {
+      trayEls.forEach((el, i) => {
+        const ctx = el.getContext('2d');
+        const cssSize = el.clientWidth;
+        ctx.clearRect(0, 0, cssSize, cssSize);
+        if (shapes[i]) drawShapePreview(ctx, shapes[i], shapeColors[i], cssSize);
+      });
+    }
+
+    // Приводим внутреннее разрешение канваса к devicePixelRatio, чтобы блоки
+    // были чёткими на «глянце» телефонов с ретиной — весь остальной код
+    // (cellSize, drawBoard и т.д.) продолжает работать в CSS-пикселях,
+    // масштаб на физические пиксели скрыт здесь через ctx.setTransform.
+    function fitCanvasToCss(canvas, cssSize) {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(cssSize * dpr);
+      canvas.height = Math.round(cssSize * dpr);
+      canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function resize() {
+      const size = Math.round(boardWrap.clientWidth);
+      for (const canvas of [boardCanvas, effectsCanvas, dragCanvas]) {
+        fitCanvasToCss(canvas, size);
+      }
+      cellSize = computeCellSize(size);
+      trayEls.forEach((el) => fitCanvasToCss(el, Math.round(el.clientWidth)));
+      render();
+      renderTray();
+    }
+
+    function updateScoreUI(comboStreak) {
+      scoreValueEl.textContent = String(totalScore);
+      if (comboStreak > 0) {
+        comboValueEl.hidden = false;
+        comboValueEl.textContent = `комбо ×${comboStreak}`;
+      } else {
+        comboValueEl.hidden = true;
+      }
+    }
+
+    function checkGameOver() {
+      if (!board.canFitAnywhere(shapes.filter(Boolean))) {
+        gameOver = true;
+        statusLine.dataset.state = 'over';
+        statusLine.textContent = `Игра окончена. Результат: ${totalScore}. Обновите страницу, чтобы сыграть снова.`;
+        hintBtn.disabled = true;
+      }
+    }
+
+    function refillTrayIfEmpty() {
+      if (shapes.every((s) => s === null)) {
+        shapes = generateShapeSet();
+        shapeColors = shapes.map(() => randomBlockColor());
+        renderTray();
+        playAppear(trayEls);
+      }
+    }
+
+    function placeShape(shapeIndex, row, col) {
+      if (gameOver) return;
+      const shape = shapes[shapeIndex];
+      const color = shapeColors[shapeIndex];
+      const cellsPlaced = shape.cells.length;
+
+      const { clearedRows, clearedCols } = board.place(shape, row, col);
+      for (const [dr, dc] of shape.cells) {
+        colorGrid[row + dr][col + dc] = color;
+      }
+
+      shapes[shapeIndex] = null;
+      renderTray();
+      render();
+
+      const linesCleared = clearedRows.length + clearedCols.length;
+      const { points, comboStreak } = score.addMove({ cellsPlaced, linesCleared });
+      totalScore += points;
+
+      if (linesCleared > 0) {
+        // сперва собираем клетки и их цвета (клетки на пересечении очищенной
+        // строки и столбца не должны попасть в список дважды и не должны
+        // читать уже обнулённый цвет), затем одним проходом чистим colorGrid
+        const seen = new Set();
+        const explodedCells = [];
+        const addCell = (r, c) => {
+          const key = `${r},${c}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          explodedCells.push({ row: r, col: c, color: colorGrid[r][c] });
+        };
+        for (const r of clearedRows) {
+          for (let c = 0; c < BOARD_SIZE; c++) addCell(r, c);
+        }
+        for (const c of clearedCols) {
+          for (let r = 0; r < BOARD_SIZE; r++) addCell(r, c);
+        }
+        for (const { row: r, col: c } of explodedCells) {
+          colorGrid[r][c] = null;
+        }
+        render();
+        playLineClear(effectsCtx, explodedCells, cellSize, comboStreak > 1, () => {});
+      }
+
+      updateScoreUI(comboStreak);
+      refillTrayIfEmpty();
+      checkGameOver();
+    }
+
+    function invalidDrop() {
+      playShake(boardWrap);
+    }
+
+    attachDragAndDrop({
+      boardCanvas,
+      dragCanvas,
+      trayEls,
+      getBoard: () => board,
+      getShapes: () => shapes,
+      getShapeColor: (i) => shapeColors[i],
+      getCellSize: () => cellSize,
+      isLocked: () => gameOver,
+      onHover: (highlight) => render(highlight),
+      onHoverEnd: () => render(),
+      onDrop: (shapeIndex, row, col) => placeShape(shapeIndex, row, col),
+      onInvalidDrop: () => invalidDrop(),
+    });
+
+    hintBtn.addEventListener('click', () => {
+      if (gameOver) return;
+      const hint = findHint(board, shapes);
+      if (!hint) return;
+      const shape = shapes[hint.shapeIndex];
+      const highlight = shape.cells.map(([dr, dc]) => ({
+        row: hint.row + dr,
+        col: hint.col + dc,
+        valid: true,
+      }));
+      render(highlight);
+      setTimeout(() => render(), 1500);
+    });
+
+    window.addEventListener('resize', resize);
+    resize();
+    playAppear(trayEls);
+  </script>
+</body>
+</html>
