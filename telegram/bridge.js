@@ -80,6 +80,49 @@ export function createTelegramBridge(deps = {}) {
   }
 
   /**
+   * Отступ сверху, который занимает собственный интерфейс Telegram (шапка
+   * мини-аппа с хэндлом сворачивания/крестиком закрытия) поверх контента
+   * (R05.11) — если игру не сдвинуть под него, верхние кнопки визуально
+   * видны, но тач в этой полосе перехватывает нативный UI Telegram, а не
+   * WebView, и по кнопкам «промахиваешься». contentSafeAreaInset (новые
+   * версии Telegram.WebApp) уже учитывает и вырез устройства, и саму шапку
+   * Telegram — предпочтительнее; safeAreaInset — только вырез устройства
+   * (более старые версии), тоже сойдёт как фолбэк. Вне Telegram или без этих
+   * полей в SDK — 0, отступ под вырез экрана всё равно берёт на себя чистый
+   * CSS env(safe-area-inset-top) в style.css.
+   * @returns {number}
+   */
+  function getContentSafeAreaTop() {
+    if (!telegram) return 0;
+    return telegram.contentSafeAreaInset?.top ?? telegram.safeAreaInset?.top ?? 0;
+  }
+
+  /**
+   * Подписка на изменение отступа (поворот экрана, версия Telegram меняет
+   * своё UI и т.п.) — callback получает актуальный getContentSafeAreaTop().
+   * @param {(top: number) => void} callback
+   * @returns {() => void} функция отписки
+   */
+  function onSafeAreaChange(callback) {
+    if (!telegram?.onEvent) return () => {};
+    const handler = () => callback(getContentSafeAreaTop());
+    try {
+      telegram.onEvent('safeAreaChanged', handler);
+      telegram.onEvent('contentSafeAreaChanged', handler);
+    } catch {
+      // Сбой подписки не должен ронять игру — просто не будет живого обновления.
+    }
+    return () => {
+      try {
+        telegram.offEvent?.('safeAreaChanged', handler);
+        telegram.offEvent?.('contentSafeAreaChanged', handler);
+      } catch {
+        // no-op
+      }
+    };
+  }
+
+  /**
    * Вибро-отклик (R28). type — один из 'placement' | 'lineClear' |
    * 'invalidPlacement' | 'hoverValid'.
    * Неизвестный type и отсутствие Telegram/HapticFeedback — безопасный no-op.
@@ -161,6 +204,8 @@ export function createTelegramBridge(deps = {}) {
     init,
     getColorScheme,
     onThemeChange,
+    getContentSafeAreaTop,
+    onSafeAreaChange,
     haptic,
     showMainButton,
     hideMainButton,

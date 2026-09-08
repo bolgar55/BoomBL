@@ -203,6 +203,19 @@ async function main() {
   applyTheme(telegramBridge.getColorScheme());
   telegramBridge.onThemeChange(applyTheme); // R22.1 — перекраска на лету
 
+  // ---- отступ под собственный интерфейс Telegram (R05.11) ----
+  // Верхние кнопки шапки визуально видны, но без этого отступа на телефоне
+  // в них легко «промахнуться» — тач в этой полосе перехватывает нативную
+  // шапку/хэндл Telegram поверх WebView, а не саму игру. См. style.css:
+  // #app использует эту переменную в padding-top вместе с CSS env()
+  // (вырез экрана) через max() — берём более крупный из двух отступов.
+  function applySafeAreaTop() {
+    const top = telegramBridge.getContentSafeAreaTop();
+    document.documentElement.style.setProperty('--tg-safe-area-top', `${top}px`);
+  }
+  applySafeAreaTop();
+  telegramBridge.onSafeAreaChange(applySafeAreaTop);
+
   // ---- звук: переключатель монтируется в свой слот в шапке (R20) ----
   soundEngine.mountToggleButton({ container: soundSlot });
 

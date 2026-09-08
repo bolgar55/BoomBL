@@ -15,6 +15,10 @@
   --score-color: #FFD700;
   --score-outline: #7a5600;
   --danger: #FF4757;
+  /* Отступ под собственную шапку/хэндл Telegram (R05.11) — значение
+     выставляет app.js через telegramBridge.getContentSafeAreaTop(), 0 по
+     умолчанию (вне Telegram). См. #app ниже — max() с env() под вырез экрана. */
+  --tg-safe-area-top: 0px;
 }
 
 :root[data-theme='light'] {
@@ -51,6 +55,13 @@ body {
   max-width: 520px;
   margin: 0 auto;
   padding: 12px;
+  /* Верхние кнопки шапки должны быть НИЖЕ выреза экрана и нативного UI
+     Telegram (R05.11) — иначе они визуально видны, но тач в этой полосе
+     перехватывает шапку/хэндл Telegram, а не WebView, и по кнопкам
+     промахиваешься. max() берёт больший из двух отступов: env() — вырез
+     самого устройства (действует и без JS), --tg-safe-area-top — то, что
+     реально занимает интерфейс Telegram поверх контента (app.js). */
+  padding-top: calc(12px + max(env(safe-area-inset-top, 0px), var(--tg-safe-area-top, 0px)));
   gap: 12px;
   touch-action: none; /* весь драг обрабатываем сами через Pointer Events */
 }
@@ -732,6 +743,7 @@ button:disabled {
 @media (max-width: 359px) {
   #app {
     padding: 8px;
+    padding-top: calc(8px + max(env(safe-area-inset-top, 0px), var(--tg-safe-area-top, 0px)));
     gap: 8px;
   }
 
