@@ -228,11 +228,13 @@ export function showAchievementUnlock({ container, i18n, def }) {
  * Показывает всплывающую карточку о старте временного ивента партии
  * (game/events.js) — та же самая очередь/анимация, что и у уведомления о
  * достижении, просто с готовым (уже переведённым) содержимым вместо поиска
- * его по id достижения.
+ * его по id достижения. Появляется СВЕРХУ (achievement-toast--top, см.
+ * style.css), а не снизу как ачивки — игрок отметил, что снизу она мешает
+ * драгу фигур из лотка; сама пропадает через TOAST_LIFETIME_MS как обычно.
  * @param {{ container: HTMLElement, i18n: object, icon: string, title: string, desc: string }} opts
  */
 export function showEventToast({ container, i18n, icon, title, desc }) {
-  toastQueue.push({ container, i18n, content: { icon, kicker: null, title, desc } });
+  toastQueue.push({ container, i18n, content: { icon, kicker: null, title, desc, top: true } });
   if (!toastShowing) processToastQueue();
 }
 
@@ -248,7 +250,7 @@ function processToastQueue() {
 
 function renderToast({ container, i18n, content }, onDone) {
   const toast = document.createElement('div');
-  toast.className = 'achievement-toast';
+  toast.className = content.top ? 'achievement-toast achievement-toast--top' : 'achievement-toast';
 
   const icon = document.createElement('div');
   icon.className = 'achievement-toast-icon';

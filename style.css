@@ -868,6 +868,37 @@ button:disabled {
   }
 }
 
+/* Вариант тоста «сверху» (используется showEventToast для анонса ивента
+   партии, см. ui/achievements.js) — игрок отметил, что снизу тост мешает
+   перетаскивать фигуры из лотка; появляется над полем, поверх верхней
+   панели, и так же сам уезжает и тает через TOAST_LIFETIME_MS. */
+.achievement-toast--top {
+  top: calc(8px + max(env(safe-area-inset-top, 0px), var(--tg-safe-area-top, 0px)));
+  bottom: auto;
+}
+
+/* Закрытая позиция (до появления) — отдельно от --visible/--leaving, иначе
+   при равном приоритете правил чей transform "победит" зависело бы только от
+   порядка в файле, а не от реального состояния тоста. */
+.achievement-toast--top:not(.achievement-toast--visible):not(.achievement-toast--leaving) {
+  transform: translate(-50%, -140%) scale(0.9);
+}
+
+.achievement-toast--top.achievement-toast--leaving {
+  animation-name: achievementToastLeaveTop;
+}
+
+@keyframes achievementToastLeaveTop {
+  from {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -40%) scale(0.92);
+    opacity: 0;
+  }
+}
+
 .achievement-toast-icon {
   flex: 0 0 auto;
   width: 42px;
