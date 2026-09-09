@@ -12,12 +12,21 @@
 // GAME_URL — открытое место спецификации, читается из переменных окружения
 // через config.js (см. этот файл и api/config.js), а не зашито константой здесь.
 
-import { Board, BOARD_SIZE, hasAnyValidMove } from './game/board.js';
-import { generateShapeSet, resetWaveRhythm } from './game/shapes.js';
-import { Score } from './game/score.js';
-import { createEventDirector } from './game/events.js';
-import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js';
-import { attachDragAndDrop, isValidDrop } from './ui/input.js';
+// ?v=X.Y.Z на каждом локальном импорте — сброс кэша (см. «почему подсказку
+// про ивент не переместил» — оказалось, Telegram WebView на телефоне держал
+// старую версию ui/achievements.js несмотря на обновлённый index.html: у
+// статики без билд-шага нет хеша в имени файла, поэтому браузер/WebView сам
+// решает, когда перезапрашивать модуль). Спецификатор import — литерал
+// строки, шаблонную строку/переменную сюда подставить нельзя (синтаксис ES
+// modules), поэтому версию приходится вписывать вручную в каждую строку —
+// держать её синхронной с package.json/version-tag на каждый пуш (см.
+// memory: «always bump version»).
+import { Board, BOARD_SIZE, hasAnyValidMove } from './game/board.js?v=0.4.4';
+import { generateShapeSet, resetWaveRhythm } from './game/shapes.js?v=0.4.4';
+import { Score } from './game/score.js?v=0.4.4';
+import { createEventDirector } from './game/events.js?v=0.4.4';
+import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js?v=0.4.4';
+import { attachDragAndDrop, isValidDrop } from './ui/input.js?v=0.4.4';
 import {
   playAppear,
   playShake,
@@ -29,15 +38,15 @@ import {
   createFullClearBurstLayer,
   animateScoreCountUp,
   playBonusPopup,
-} from './ui/animations.js';
-import { createPersistence } from './game/persistence.js';
-import { createTelegramBridge } from './telegram/bridge.js';
-import { createI18n } from './i18n/index.js';
-import { createChallenges } from './game/challenges.js';
-import { createAchievements } from './game/achievements.js';
-import { createGameOverScreen } from './ui/gameover.js';
-import { createAchievementsScreen, showAchievementUnlock, showEventToast } from './ui/achievements.js';
-import { loadConfig } from './config.js';
+} from './ui/animations.js?v=0.4.4';
+import { createPersistence } from './game/persistence.js?v=0.4.4';
+import { createTelegramBridge } from './telegram/bridge.js?v=0.4.4';
+import { createI18n } from './i18n/index.js?v=0.4.4';
+import { createChallenges } from './game/challenges.js?v=0.4.4';
+import { createAchievements } from './game/achievements.js?v=0.4.4';
+import { createGameOverScreen } from './ui/gameover.js?v=0.4.4';
+import { createAchievementsScreen, showAchievementUnlock, showEventToast } from './ui/achievements.js?v=0.4.4';
+import { loadConfig } from './config.js?v=0.4.4';
 
 // Бонус за закрытие изолированного пробела (R05.4) — за клетку закрытого
 // пробела. Открытое число баланса — не задано спецификацией, подобрано так,

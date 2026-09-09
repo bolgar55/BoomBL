@@ -17,7 +17,7 @@
 // за кадр. Эффекты не блокируют игровую логику: все триггеры — fire-and-forget,
 // вызывающий код (app.js) не ждёт их завершения перед следующим ходом.
 
-import { drawComboPreview } from './render.js';
+import { drawComboPreview } from './render.js?v=0.4.4';
 
 const APPEAR_CLASS = 'anim-appear';
 const SHAKE_CLASS = 'anim-shake';
