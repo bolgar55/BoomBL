@@ -200,6 +200,33 @@ export function createTelegramBridge(deps = {}) {
     }
   }
 
+  /**
+   * Сырая строка Telegram.WebApp.initData — подписанные данные текущего
+   * игрока (см. bot/verify-webapp-data.js), нужна только для отправки
+   * результата в лидерборд (api/leaderboard.js): сервер сам проверяет
+   * подпись, здесь это просто прозрачная передача строки как есть. Вне
+   * Telegram (initData отсутствует) — пустая строка, вызывающий код (API
+   * лидерборда) тогда просто не отправляет счёт.
+   * @returns {string}
+   */
+  function getInitData() {
+    return telegram?.initData ?? '';
+  }
+
+  /**
+   * Telegram id текущего игрока — только для UI (подсветить свою строку в
+   * списке лидерборда), НЕ для авторизации: initDataUnsafe, как следует из
+   * названия, не проверен подписью и не должен использоваться нигде, где
+   * важна доверенность значения (для этого есть getInitData() выше, которую
+   * сервер сам проверяет). Строкой — id из лидерборда тоже строка (ключ
+   * Redis-хэша), сравнивать через ===.
+   * @returns {string|null}
+   */
+  function getMyUserId() {
+    const id = telegram?.initDataUnsafe?.user?.id;
+    return typeof id === 'number' ? String(id) : null;
+  }
+
   return {
     init,
     getColorScheme,
@@ -211,5 +238,7 @@ export function createTelegramBridge(deps = {}) {
     hideMainButton,
     openInvoice,
     shareResult,
+    getInitData,
+    getMyUserId,
   };
 }

@@ -21,12 +21,12 @@
 // modules), поэтому версию приходится вписывать вручную в каждую строку —
 // держать её синхронной с package.json/version-tag на каждый пуш (см.
 // memory: «always bump version»).
-import { Board, BOARD_SIZE, hasAnyValidMove } from './game/board.js?v=0.4.9';
-import { generateShapeSet } from './game/shapes.js?v=0.4.9';
-import { Score } from './game/score.js?v=0.4.9';
-import { createEventDirector } from './game/events.js?v=0.4.9';
-import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js?v=0.4.9';
-import { attachDragAndDrop, isValidDrop } from './ui/input.js?v=0.4.9';
+import { Board, BOARD_SIZE, hasAnyValidMove } from './game/board.js?v=0.5.0';
+import { generateShapeSet } from './game/shapes.js?v=0.5.0';
+import { Score } from './game/score.js?v=0.5.0';
+import { createEventDirector } from './game/events.js?v=0.5.0';
+import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js?v=0.5.0';
+import { attachDragAndDrop, isValidDrop } from './ui/input.js?v=0.5.0';
 import {
   playAppear,
   playShake,
@@ -38,15 +38,16 @@ import {
   createFullClearBurstLayer,
   animateScoreCountUp,
   playBonusPopup,
-} from './ui/animations.js?v=0.4.9';
-import { createPersistence } from './game/persistence.js?v=0.4.9';
-import { createTelegramBridge } from './telegram/bridge.js?v=0.4.9';
-import { createI18n } from './i18n/index.js?v=0.4.9';
-import { createChallenges } from './game/challenges.js?v=0.4.9';
-import { createAchievements } from './game/achievements.js?v=0.4.9';
-import { createGameOverScreen } from './ui/gameover.js?v=0.4.9';
-import { createAchievementsScreen, showAchievementUnlock, showEventToast } from './ui/achievements.js?v=0.4.9';
-import { loadConfig } from './config.js?v=0.4.9';
+} from './ui/animations.js?v=0.5.0';
+import { createPersistence } from './game/persistence.js?v=0.5.0';
+import { createTelegramBridge } from './telegram/bridge.js?v=0.5.0';
+import { createI18n } from './i18n/index.js?v=0.5.0';
+import { createChallenges } from './game/challenges.js?v=0.5.0';
+import { createAchievements } from './game/achievements.js?v=0.5.0';
+import { createGameOverScreen } from './ui/gameover.js?v=0.5.0';
+import { createAchievementsScreen, showAchievementUnlock, showEventToast } from './ui/achievements.js?v=0.5.0';
+import { createLeaderboardScreen } from './ui/leaderboard.js?v=0.5.0';
+import { loadConfig } from './config.js?v=0.5.0';
 
 // Бонус за закрытие изолированного пробела (R05.4) — за клетку закрытого
 // пробела. Открытое число баланса — не задано спецификацией, подобрано так,
@@ -121,6 +122,7 @@ const scoreValueEl = document.getElementById('score-value');
 const comboValueEl = document.getElementById('combo-value');
 const highScoreLabelEl = document.getElementById('high-score-label');
 const highScoreValueEl = document.getElementById('high-score-value');
+const leaderboardBtn = document.getElementById('leaderboard-btn');
 const achievementsBtn = document.getElementById('achievements-btn');
 const languageBtn = document.getElementById('language-btn');
 const challengePanelEl = document.getElementById('challenge-panel');
@@ -273,6 +275,7 @@ async function main() {
   function applyTexts() {
     scoreLabelEl.textContent = i18n.t('score');
     highScoreLabelEl.textContent = i18n.t('highScore');
+    leaderboardBtn.setAttribute('aria-label', i18n.t('leaderboardBtnLabel'));
     achievementsBtn.setAttribute('aria-label', i18n.t('achievementsBtnLabel'));
     languageBtn.textContent = i18n.getLanguage().toUpperCase();
     languageBtn.setAttribute('aria-label', i18n.t('language'));
@@ -378,6 +381,45 @@ async function main() {
   });
   achievementsBtn.addEventListener('click', () => achievementsScreen.show());
 
+  // ---- лидерборд (глобальный, топ-20, всё время) ----
+  // Публичное чтение — /api/config уже показал, что бэкенда рядом может не
+  // быть (статика поднята локально) или он может ответить ошибкой (KV не
+  // настроен, спец §Решения 9) — экран должен мягко это показать, не падая.
+  async function fetchLeaderboardData() {
+    try {
+      const response = await fetch('/api/leaderboard');
+      if (!response.ok) return null;
+      return await response.json();
+    } catch {
+      return null;
+    }
+  }
+
+  const leaderboardScreen = createLeaderboardScreen({
+    container: overlayRoot,
+    i18n,
+    fetchLeaderboard: fetchLeaderboardData,
+    getMyUserId: () => telegramBridge.getMyUserId(),
+  });
+  leaderboardBtn.addEventListener('click', () => leaderboardScreen.show());
+
+  // Отправка результата — fire-and-forget (тот же принцип, что и у записи
+  // рекорда в ui/gameover.js: не блокировать интерфейс сетевым запросом).
+  // Сервер сам проверяет initData и сам решает, лучше ли этот счёт уже
+  // сохранённого (GT в api/leaderboard.js) — здесь не нужно ничего знать
+  // про предыдущий результат игрока, просто шлём то, что есть.
+  function submitLeaderboardScore(score) {
+    const initData = telegramBridge.getInitData();
+    if (!initData) return; // вне Telegram (или initData недоступна) — отправлять нечего
+    fetch('/api/leaderboard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initData, score }),
+    }).catch(() => {
+      // Сбой сети/бэкенда не должен ничего ломать игроку (spec §Решения 9).
+    });
+  }
+
   /**
    * Прогоняет событие через трекер достижений и показывает тост для каждого,
    * что разблокировался именно этим вызовом — reportEvent сам гарантирует,
@@ -449,6 +491,7 @@ async function main() {
   }
 
   async function showGameOver() {
+    submitLeaderboardScore(totalScore);
     const state = await gameOverScreen.show(totalScore, {
       linesCleared: linesClearedThisGame,
       bestCombo: bestComboThisGame,

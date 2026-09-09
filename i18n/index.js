@@ -49,6 +49,12 @@ const DICTIONARIES = {
     comboTier20: '👑 Легендарно! Комбо ×20',
     scoreMilestone: 'Рубеж {goal} очков!',
 
+    leaderboard: 'Таблица лидеров',
+    leaderboardBtnLabel: 'Таблица лидеров',
+    leaderboardLoading: 'Загрузка...',
+    leaderboardError: 'Не удалось загрузить таблицу лидеров',
+    leaderboardEmpty: 'Пока никто не набрал очков — стань первым!',
+
     achievements: 'Достижения',
     achievementsBtnLabel: 'Достижения',
     achievementLocked: 'Заблокировано',
@@ -181,6 +187,12 @@ const DICTIONARIES = {
     comboTier10: '⚡ Incredible! Combo ×10',
     comboTier20: '👑 Legendary! Combo ×20',
     scoreMilestone: '{goal} point milestone!',
+
+    leaderboard: 'Leaderboard',
+    leaderboardBtnLabel: 'Leaderboard',
+    leaderboardLoading: 'Loading...',
+    leaderboardError: 'Could not load the leaderboard',
+    leaderboardEmpty: 'No scores yet - be the first!',
 
     achievements: 'Achievements',
     achievementsBtnLabel: 'Achievements',
