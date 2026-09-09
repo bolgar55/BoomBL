@@ -29,20 +29,6 @@ api/                            Vercel serverless functions (config, leaderboard
 bot/                            Telegram bot update handling + initData verification
 ```
 
-## Running locally
-
-The frontend is static — any static file server works:
-
-```bash
-python -m http.server 8123
-```
-
-The backend (`api/`, `bot/`) is a set of Vercel serverless functions. To run everything together locally, use the Vercel CLI:
-
-```bash
-npx vercel dev
-```
-
 ## Deployment
 
 The frontend and backend are deployed from the same repository to two different targets:
