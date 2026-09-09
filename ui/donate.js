@@ -1,27 +1,27 @@
 // ui/donate.js
-// Кнопка доната через Telegram Stars (R43, spec §Решения 8). Точка входа —
-// проверяется вручную при ревью, а не юнит-тестом (interfaces.md: швы для
-// тестов). Логика: POST /api/create-invoice {amountStars} -> {invoiceUrl},
-// затем telegram-bridge.openInvoice(invoiceUrl).
+// Donate button via Telegram Stars (R43, spec §Decisions 8). Entry point —
+// checked manually during review, not by a unit test (interfaces.md: test
+// seams). Logic: POST /api/create-invoice {amountStars} -> {invoiceUrl},
+// then telegram-bridge.openInvoice(invoiceUrl).
 //
-// Интеграция в index.html (какой элемент вызывает donate()) — зона таска 07,
-// этот модуль только выставляет функцию для вызова.
+// Wiring it into index.html (which element calls donate()) is task 07's
+// concern — this module only exposes the function to call.
 
-// Номиналы доната в Stars — пользователь их не называл (spec «Открытые
-// места»). Это ВИДИМЫЙ плейсхолдер, а не рабочее значение по умолчанию:
-// перед интеграцией в UI (таск 07) сюда нужно вписать реальные суммы.
-export const STARS_AMOUNTS = [/* впиши, например 25, 50, 100 */];
+// Donation amounts in Stars — the user never specified them (spec "Open
+// items"). This is a VISIBLE placeholder, not a working default: real
+// amounts need to be filled in here before UI integration (task 07).
+export const STARS_AMOUNTS = [/* fill in, e.g. 25, 50, 100 */];
 
 /**
- * Создаёт функцию доната с инжектируемыми зависимостями — нужно для
- * ручного тестирования вне Telegram и для подмены fetch при необходимости.
+ * Creates the donate function with injectable dependencies — needed for
+ * manual testing outside Telegram and for swapping fetch when necessary.
  * @param {{telegramBridge: {openInvoice: (url: string) => Promise<string>},
  *          fetchImpl?: Function,
  *          onError?: () => void}} deps
- *   telegramBridge — мост из telegram/bridge.js (таск 03), обязателен;
- *   fetchImpl — по умолчанию window.fetch;
- *   onError — вызывается при неудаче создания счёта (R43.1); отменённый
- *     платёж (R43.2) НЕ считается ошибкой и onError не вызывает.
+ *   telegramBridge — bridge from telegram/bridge.js (task 03), required;
+ *   fetchImpl — defaults to window.fetch;
+ *   onError — called when invoice creation fails (R43.1); a cancelled
+ *     payment (R43.2) is NOT an error and does not call onError.
  * @returns {{donate: (amountStars: number) => Promise<void>}}
  */
 export function createDonateFlow(deps = {}) {
@@ -30,9 +30,9 @@ export function createDonateFlow(deps = {}) {
   const onError = deps.onError ?? (() => {});
 
   /**
-   * Запускает донат на amountStars Stars: создаёт счёт на сервере и
-   * открывает его через Telegram. Не бросает исключений наружу — все сбои
-   * обрабатываются мягко (R43.1), отмена — тихо (R43.2).
+   * Starts a donation of amountStars Stars: creates an invoice on the
+   * server and opens it via Telegram. Never throws outward — all failures
+   * are handled gracefully (R43.1), cancellation silently (R43.2).
    */
   async function donate(amountStars) {
     let invoiceUrl;
@@ -42,24 +42,24 @@ export function createDonateFlow(deps = {}) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amountStars }),
       });
-      if (!response.ok) throw new Error('create-invoice: не-2xx ответ');
+      if (!response.ok) throw new Error('create-invoice: non-2xx response');
       const data = await response.json();
-      if (!data?.invoiceUrl) throw new Error('create-invoice: нет invoiceUrl');
+      if (!data?.invoiceUrl) throw new Error('create-invoice: missing invoiceUrl');
       invoiceUrl = data.invoiceUrl;
     } catch {
-      // Счёт создать не удалось — мягкая ошибка, игра продолжает работать (R43.1).
+      // Failed to create the invoice — soft error, game keeps running (R43.1).
       onError();
       return;
     }
 
     const status = await telegramBridge.openInvoice(invoiceUrl);
     if (status === 'failed') {
-      // Сбой открытия окна оплаты — тоже мягкая ошибка (R43.1).
+      // Payment window failed to open — also a soft error (R43.1).
       onError();
     }
-    // status === 'cancelled' — тихий возврат в игру, без сообщения (R43.2).
-    // status === 'paid' / 'pending' — успех/в обработке, отдельного экрана
-    // не требуется: лидерборда и хранения платежа нет (spec §Решения 8/12).
+    // status === 'cancelled' — silently return to the game, no message (R43.2).
+    // status === 'paid' / 'pending' — success/processing, no separate screen
+    // needed: there's no leaderboard or payment storage (spec §Decisions 8/12).
   }
 
   return { donate };

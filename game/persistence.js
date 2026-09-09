@@ -1,24 +1,24 @@
 // game/persistence.js
-// Персистентность: лучший результат, настройки (звук/язык), прогресс дневного
-// челленджа (границы модуля `persistence` — interfaces.md).
-// Backend выбирается прозрачно для вызывающего кода: внутри Telegram — его
-// CloudStorage, вне Telegram или при сбое CloudStorage — localStorage
-// (spec §Решения 9, R12.2, R46i). Наружу торчат только getItem/setItem —
-// выбор и переключение backend'а спрятаны внутри модуля.
+// Persistence: high score, settings (sound/language), daily challenge
+// progress (module `persistence` boundaries - interfaces.md).
+// Backend selection is transparent to the caller: inside Telegram, its
+// CloudStorage; outside Telegram or on CloudStorage failure, localStorage
+// (spec §Decisions 9, R12.2, R46i). Only getItem/setItem are exposed -
+// backend selection and switching is internal to the module.
 
-// Значения по умолчанию для ключей, для которых первый запуск оговорён явно
-// в приёмке (R12.1): highScore должен быть 0, а не undefined/ошибка.
+// Default values for keys whose first-run behavior is explicitly specified
+// in acceptance criteria (R12.1): highScore must be 0, not undefined/an error.
 const BUILTIN_DEFAULTS = {
   highScore: 0,
 };
 
 /**
- * Создаёт объект персистентности с инжектируемыми зависимостями — нужно и
- * для тестов (мок CloudStorage/localStorage), и для реальной работы:
- * без deps модуль сам найдёт window.Telegram?.WebApp и window.localStorage.
+ * Creates a persistence handler with injectable dependencies - needed both
+ * for tests (mock CloudStorage/localStorage) and real usage: without deps
+ * the module finds window.Telegram?.WebApp and window.localStorage itself.
  * @param {{telegram?: object, storage?: object}} [deps]
- *   telegram — объект вида Telegram.WebApp (может отсутствовать вне Telegram);
- *   storage — объект вида localStorage (может отсутствовать/бросать в приватном режиме).
+ *   telegram - a Telegram.WebApp-like object (may be absent outside Telegram);
+ *   storage - a localStorage-like object (may be absent/throw in private mode).
  * @returns {{getItem: (key: string, defaultValue?: *) => Promise<*>, setItem: (key: string, value: *) => Promise<void>}}
  */
 export function createPersistence(deps = {}) {
@@ -27,14 +27,15 @@ export function createPersistence(deps = {}) {
   const storage = deps.storage ?? globalThis.window?.localStorage ?? globalThis.localStorage ?? null;
   const cloudStorage = telegram?.CloudStorage ?? null;
 
-  // Клиенты Telegram старее той версии, что реально поддерживает CloudStorage,
-  // всё равно выставляют сам объект CloudStorage — но вызов getItem/setItem на
-  // них печатает "CloudStorage is not supported in version N" и молча НЕ
-  // вызывает колбэк вообще (ни успеха, ни ошибки) — таков реальный SDK
-  // Telegram. Без таймаута это вешает await ниже НАВСЕГДА (реальный баг:
-  // экран Game Over не появлялся при новом рекорде — именно там setItem
-  // ждали). Таймаут превращает такое зависание в обычный сбой — try/catch в
-  // getItem/setItem ниже и так уже откатывается на localStorage.
+  // Telegram clients older than the version that actually supports
+  // CloudStorage still expose the CloudStorage object itself - but calling
+  // getItem/setItem on them logs "CloudStorage is not supported in version N"
+  // and silently never invokes the callback at all (neither success nor
+  // error) - that's the real Telegram SDK behavior. Without a timeout this
+  // hangs the await below FOREVER (real bug: the Game Over screen didn't
+  // appear on a new high score - it was waiting on setItem there). The
+  // timeout turns such a hang into an ordinary failure - the try/catch in
+  // getItem/setItem below already falls back to localStorage anyway.
   const CLOUD_CALLBACK_TIMEOUT_MS = 2500;
 
   function withTimeout(promise) {
@@ -56,7 +57,7 @@ export function createPersistence(deps = {}) {
     });
   }
 
-  // CloudStorage Telegram — колбэк-API, оборачиваем в Promise для единообразия.
+  // Telegram CloudStorage is a callback API - wrap it in a Promise for consistency.
   function cloudGet(key) {
     return withTimeout(
       new Promise((resolve, reject) => {
@@ -87,8 +88,8 @@ export function createPersistence(deps = {}) {
     );
   }
 
-  // Безопасное чтение/запись localStorage — сбой (например, приватный режим
-  // браузера) не должен ронять игру и не должен показывать ошибку игроку.
+  // Safe localStorage read/write - a failure (e.g. private browsing mode)
+  // must not crash the game or show an error to the player.
   function localGet(key) {
     try {
       return storage ? storage.getItem(key) : null;
@@ -101,12 +102,12 @@ export function createPersistence(deps = {}) {
     try {
       storage?.setItem(key, value);
     } catch {
-      // Сохранить не удалось нигде — тихо игнорируем, партия продолжается.
+      // Couldn't save anywhere - silently ignore, the game continues.
     }
   }
 
-  // CloudStorage возвращает '' для отсутствующего ключа, localStorage — null.
-  // Оба случая — «ничего не сохранено», используем значение по умолчанию.
+  // CloudStorage returns '' for a missing key, localStorage returns null.
+  // Both mean "nothing saved" - fall back to the default value.
   function parse(raw, fallback) {
     if (raw === null || raw === undefined || raw === '') return fallback;
     try {
@@ -127,14 +128,14 @@ export function createPersistence(deps = {}) {
     if (cloudStorage) {
       try {
         const raw = await cloudGet(key);
-        // Зеркалим успешное чтение в localStorage (см. setItem ниже) — иначе
-        // локальный кэш никогда не обновляется чтением, и следующий сбой/
-        // таймаут cloud снова откатится на устаревшее (или дефолтное)
-        // значение вместо реального последнего известного.
+        // Mirror a successful read into localStorage (see setItem below) -
+        // otherwise the local cache never gets updated by reads, and the
+        // next cloud failure/timeout would fall back to a stale (or
+        // default) value instead of the real last-known one.
         localSet(key, raw);
         return parse(raw, fallback);
       } catch {
-        // Сбой CloudStorage при чтении — тихий откат на localStorage (R12.2).
+        // CloudStorage read failed - silently fall back to localStorage (R12.2).
       }
     }
 
@@ -147,18 +148,18 @@ export function createPersistence(deps = {}) {
     if (cloudStorage) {
       try {
         await cloudSet(key, raw);
-        // Зеркалим успешную запись и в localStorage — без этого localStorage
-        // навсегда остаётся "холодным" (никогда не обновляется, пока
-        // CloudStorage работает), и любой единичный сбой/таймаут cloud
-        // (см. withTimeout выше) откатывается на пустое/дефолтное значение
-        // вместо реального. Реальный баг: рекорд 5197 в облаке, разовый
-        // сбой чтения при Game Over откатился на 0 → "новый рекорд" на 1500,
-        // а следующая запись рисковала затереть настоящие 5197 неправильным
-        // меньшим числом.
+        // Mirror a successful write into localStorage too - without this,
+        // localStorage stays permanently "cold" (never updated while
+        // CloudStorage works), and any single cloud failure/timeout (see
+        // withTimeout above) falls back to an empty/default value instead
+        // of the real one. Real bug: high score 5197 in the cloud, a one-off
+        // read failure on Game Over fell back to 0, showing "new record" at
+        // 1500 - and the next write risked overwriting the real 5197 with
+        // that wrong, smaller number.
         localSet(key, raw);
         return;
       } catch {
-        // Сбой CloudStorage при записи — тихий откат на localStorage.
+        // CloudStorage write failed - silently fall back to localStorage.
       }
     }
 

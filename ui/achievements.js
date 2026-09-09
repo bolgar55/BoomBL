@@ -1,9 +1,9 @@
 // ui/achievements.js
-// Экран списка достижений + всплывающее уведомление о разблокировке (R05.7).
-// Не хранит игровое состояние — только строит DOM по данным, которые ему
-// передают (game/achievements.js — источник истины по прогрессу). Паттерн
-// «модуль сам строит свой DOM в container при первом show()» — как и
-// ui/gameover.js, чтобы не требовать правок index.html под каждый элемент.
+// Achievements list screen + unlock notification popup (R05.7). Stateless —
+// just builds DOM from data it's given (game/achievements.js is the source
+// of truth for progress). Same pattern as ui/gameover.js — "module builds
+// its own DOM in container on first show()" — so index.html doesn't need
+// edits for every new element.
 
 const TIER_LABEL = {
   common: '',
@@ -14,7 +14,7 @@ const TIER_LABEL = {
 };
 
 /**
- * Создаёт контроллер экрана достижений — полноэкранный оверлей со списком.
+ * Creates the achievements screen controller — a full-screen overlay with a list.
  * @param {{
  *   container: HTMLElement,
  *   i18n: { t: (key:string, params?:object) => string },
@@ -71,11 +71,11 @@ export function createAchievementsScreen({ container, i18n, getAchievements, get
     return overlay;
   }
 
-  // Не ждём setPinned() перед обновлением интерфейса — она сохраняет выбор
-  // через persistence, которая внутри Telegram уходит в CloudStorage (реальный
-  // сетевой запрос, иногда заметно медленный); UI обновляется сразу по
-  // локальному pinnedId, а сохранение продолжается в фоне (тот же фикс, что
-  // и для кнопки языка в app.js).
+  // Don't await setPinned() before updating the UI — it saves the choice via
+  // persistence, which inside Telegram goes through CloudStorage (a real
+  // network request, sometimes noticeably slow); the UI updates immediately
+  // from the local pinnedId while the save continues in the background
+  // (same fix as the language button in app.js).
   function togglePin(id) {
     const next = pinnedId === id ? null : id;
     pinnedId = next;
@@ -167,9 +167,9 @@ export function createAchievementsScreen({ container, i18n, getAchievements, get
     listEl.innerHTML = '';
     pinnedId = await getPinnedId();
     const all = await getAchievements();
-    // Закреплённое — всегда первым (это и есть его смысл), затем
-    // разблокированные, дальше по прогрессу (кто ближе к цели — выше),
-    // секретные нераскрытые — в самом конце.
+    // Pinned always comes first (that's the point of pinning it), then
+    // unlocked ones, then by progress (closer to the goal ranks higher),
+    // with undiscovered secret ones at the very end.
     const sorted = [...all].sort((a, b) => {
       if (a.id === pinnedId || b.id === pinnedId) return a.id === pinnedId ? -1 : 1;
       if (a.unlocked !== b.unlocked) return a.unlocked ? -1 : 1;
@@ -199,12 +199,12 @@ export function createAchievementsScreen({ container, i18n, getAchievements, get
 const TOAST_LIFETIME_MS = 4200;
 
 /**
- * Показывает всплывающую карточку о новом достижении (R05.7) — растёт и
- * появляется, держится, затем уезжает и исчезает; можно закрыть вручную.
- * Если уведомлений несколько подряд — складываются в очередь и показываются
- * один за другим, а не поверх друг друга. Общая очередь/DOM-механика вынесена
- * в renderToast/processToastQueue — showEventToast (см. ниже, ивенты партии)
- * использует ту же самую очередь и разметку, просто с другим содержимым.
+ * Shows a popup card for a newly unlocked achievement (R05.7) — grows in,
+ * holds, then slides out and fades; can be dismissed manually. Multiple
+ * notifications in a row queue up and show one after another instead of
+ * stacking on top of each other. The shared queue/DOM mechanics live in
+ * renderToast/processToastQueue — showEventToast (below, for match events)
+ * uses the same queue and markup, just with different content.
  * @param {{ container: HTMLElement, i18n: object, def: import('../game/achievements.js').AchievementDef }} opts
  */
 const toastQueue = [];
@@ -225,12 +225,13 @@ export function showAchievementUnlock({ container, i18n, def }) {
 }
 
 /**
- * Показывает всплывающую карточку о старте временного ивента партии
- * (game/events.js) — та же самая очередь/анимация, что и у уведомления о
- * достижении, просто с готовым (уже переведённым) содержимым вместо поиска
- * его по id достижения. Появляется СВЕРХУ (achievement-toast--top, см.
- * style.css), а не снизу как ачивки — игрок отметил, что снизу она мешает
- * драгу фигур из лотка; сама пропадает через TOAST_LIFETIME_MS как обычно.
+ * Shows a popup card for a temporary match event starting (game/events.js) —
+ * the same queue/animation as achievement notifications, just with ready-made
+ * (already translated) content instead of looking it up by achievement id.
+ * Appears at the TOP (achievement-toast--top, see style.css) rather than the
+ * bottom like achievements — a player noted that the bottom position
+ * interferes with dragging shapes from the tray; it self-dismisses after
+ * TOAST_LIFETIME_MS as usual.
  * @param {{ container: HTMLElement, i18n: object, icon: string, title: string, desc: string }} opts
  */
 export function showEventToast({ container, i18n, icon, title, desc }) {
@@ -308,8 +309,8 @@ function renderToast({ container, i18n, content }, onDone) {
   closeBtn.addEventListener('click', dismiss);
   timer = setTimeout(dismiss, TOAST_LIFETIME_MS);
 
-  // форсируем reflow перед добавлением класса появления — иначе анимация
-  // может не запуститься (браузер схлопнёт добавление класса с начальным рендером)
+  // force reflow before adding the appear class — otherwise the animation
+  // may not start (browser would coalesce the class add with the initial render)
   void toast.offsetWidth;
   toast.classList.add('achievement-toast--visible');
 }

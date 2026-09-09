@@ -1,32 +1,25 @@
 // app.js
-// Точка входа приложения (тикет 07 — интеграция). Связывает все модули,
-// построенные в тикетах 01–06, в одно рабочее приложение: игровой цикл
-// (board/shapes/score), рендеринг и ввод (ui/render, ui/input, ui/animations),
-// персистентность high score и настроек, мост к Telegram (тема/haptics/
-// MainButton/шеринг), экран Game Over, звук, i18n, ежедневный челлендж.
-// Кнопки «Подсказка» и «Задонатить» из интерфейса убраны по просьбе — сами
-// модули (ui/input.js findHint, ui/donate.js) не трогали, просто не вызываем.
-// Сам модуль (как и весь `ui`, см. interfaces.md) наружу ничего не
-// выставляет — это верхний уровень приложения.
-//
-// GAME_URL — открытое место спецификации, читается из переменных окружения
-// через config.js (см. этот файл и api/config.js), а не зашито константой здесь.
+// App entry point. Wires every module into one working app: the game loop
+// (board/shapes/score), rendering and input (ui/render, ui/input,
+// ui/animations), high-score/settings persistence, the Telegram bridge
+// (theme/haptics/MainButton/sharing), the Game Over screen, i18n, and the
+// daily challenge.
+// This module (like all of `ui`) exposes nothing outward - it's the app's
+// top level.
 
-// ?v=X.Y.Z на каждом локальном импорте — сброс кэша (см. «почему подсказку
-// про ивент не переместил» — оказалось, Telegram WebView на телефоне держал
-// старую версию ui/achievements.js несмотря на обновлённый index.html: у
-// статики без билд-шага нет хеша в имени файла, поэтому браузер/WebView сам
-// решает, когда перезапрашивать модуль). Спецификатор import — литерал
-// строки, шаблонную строку/переменную сюда подставить нельзя (синтаксис ES
-// modules), поэтому версию приходится вписывать вручную в каждую строку —
-// держать её синхронной с package.json/version-tag на каждый пуш (см.
-// memory: «always bump version»).
-import { Board, BOARD_SIZE, hasAnyValidMove } from './game/board.js?v=0.5.0';
-import { generateShapeSet } from './game/shapes.js?v=0.5.0';
-import { Score } from './game/score.js?v=0.5.0';
-import { createEventDirector } from './game/events.js?v=0.5.0';
-import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js?v=0.5.0';
-import { attachDragAndDrop, isValidDrop } from './ui/input.js?v=0.5.0';
+// ?v=X.Y.Z on every local import - cache busting. This is a static site
+// with no build step and no filename hashing, so a browser/WebView can keep
+// serving a stale cached copy of a module even after index.html's own
+// version updates. The import specifier must be a string literal (ES module
+// syntax forbids a template string/variable here), so the version has to be
+// written by hand on every line - keep it in sync with package.json /
+// index.html's version tag on every push.
+import { Board, BOARD_SIZE, hasAnyValidMove } from './game/board.js?v=0.5.1';
+import { generateShapeSet } from './game/shapes.js?v=0.5.1';
+import { Score } from './game/score.js?v=0.5.1';
+import { createEventDirector } from './game/events.js?v=0.5.1';
+import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js?v=0.5.1';
+import { attachDragAndDrop, isValidDrop } from './ui/input.js?v=0.5.1';
 import {
   playAppear,
   playShake,
@@ -38,83 +31,79 @@ import {
   createFullClearBurstLayer,
   animateScoreCountUp,
   playBonusPopup,
-} from './ui/animations.js?v=0.5.0';
-import { createPersistence } from './game/persistence.js?v=0.5.0';
-import { createTelegramBridge } from './telegram/bridge.js?v=0.5.0';
-import { createI18n } from './i18n/index.js?v=0.5.0';
-import { createChallenges } from './game/challenges.js?v=0.5.0';
-import { createAchievements } from './game/achievements.js?v=0.5.0';
-import { createGameOverScreen } from './ui/gameover.js?v=0.5.0';
-import { createAchievementsScreen, showAchievementUnlock, showEventToast } from './ui/achievements.js?v=0.5.0';
-import { createLeaderboardScreen } from './ui/leaderboard.js?v=0.5.0';
-import { loadConfig } from './config.js?v=0.5.0';
+} from './ui/animations.js?v=0.5.1';
+import { createPersistence } from './game/persistence.js?v=0.5.1';
+import { createTelegramBridge } from './telegram/bridge.js?v=0.5.1';
+import { createI18n } from './i18n/index.js?v=0.5.1';
+import { createChallenges } from './game/challenges.js?v=0.5.1';
+import { createAchievements } from './game/achievements.js?v=0.5.1';
+import { createGameOverScreen } from './ui/gameover.js?v=0.5.1';
+import { createAchievementsScreen, showAchievementUnlock, showEventToast } from './ui/achievements.js?v=0.5.1';
+import { createLeaderboardScreen } from './ui/leaderboard.js?v=0.5.1';
+import { loadConfig } from './config.js?v=0.5.1';
 
-// Бонус за закрытие изолированного пробела (R05.4) — за клетку закрытого
-// пробела. Открытое число баланса — не задано спецификацией, подобрано так,
-// чтобы быть заметным на фоне обычных очков (1/клетку) и очистки линий (10×N²).
-// Поднято с 10 (запрос игрока — «больше вариантов как набрать очков, может
-// награду увеличить») — крупные ходы должны заметнее двигать счёт к большим
-// цифрам (100 000 и т.д.), не трогая при этом уже проверенную формулу
-// линий/комбо в game/score.js (она сверена с приложенным игроком примером).
+// Bonus for closing an isolated gap, per cell closed. Not spec-mandated -
+// tuned to be noticeable against ordinary points (1/cell) and line clears.
+// Raised from 10 so big plays move the score further toward large numbers
+// (100,000+) without touching the already-verified line/combo formula in
+// game/score.js.
 const GAP_FILL_BONUS_PER_CELL = 15;
-// Бонус за полное удаление какого-то одного цвета с поля (R05.10) — за
-// клетку этого цвета, удалённую именно этим ходом. Считается для КАЖДОГО
-// цвета, который этим ходом исчез с поля целиком (был хоть где-то на поле
-// до хода — и нигде не остался после); если очистка убрала сразу несколько
-// цветов целиком (например, полная очистка всего поля), бонусы суммируются.
-// Поднято с 20 — см. комментарий у GAP_FILL_BONUS_PER_CELL выше.
+// Bonus for fully removing one color from the board, per cell of that color
+// cleared this move. Counted for EVERY color that this move removed from
+// the board entirely (was present somewhere before the move, gone after);
+// if a single clear removes multiple colors at once (e.g. a full-board
+// clear), the bonuses stack. Raised from 20 - see GAP_FILL_BONUS_PER_CELL above.
 const COLOR_CLEAR_BONUS_PER_CELL = 30;
-// Флэт-бонус за полную очистку поля («идеальный» ход, R06) — задан явно.
-// Поднято с 1500 — см. комментарий у GAP_FILL_BONUS_PER_CELL выше.
+// Flat bonus for fully clearing the board (a "perfect" move). Raised from
+// 1500 - see GAP_FILL_BONUS_PER_CELL above.
 const FULL_CLEAR_BONUS = 2500;
-// Короткая пауза (R06: «короткая пауза после очистки») между обычным
-// взрывом очищенной линии и большим праздничным откликом полной очистки —
-// иначе оба эффекта стартуют в один и тот же кадр и сливаются в один.
+// Short pause between the normal line-clear burst and the big celebratory
+// full-clear effect, so they don't land on the same frame and blend together.
 const FULL_CLEAR_PAUSE_MS = 280;
 
-// Именные комбо-тиры (запрос игрока — «больше вариантов комбо»): разовый
-// попап+флэт-бонус на каждый впервые достигнутый порог ТЕКУЩЕЙ серии —
-// именно достигнутый, не «на каждый ход внутри тира» (см. announcedComboTier
-// ниже, сбрасывается вместе с самим комбо). Уровни строго возрастающие.
+// Named combo tiers: a one-time popup + flat bonus the first time the
+// CURRENT streak reaches each threshold (not on every move within the
+// tier - see announcedComboTier below, reset along with the combo itself).
+// Levels are strictly increasing.
 const COMBO_TIERS = [
   { threshold: 5, key: 'comboTier5', bonus: 50 },
   { threshold: 10, key: 'comboTier10', bonus: 150 },
   { threshold: 20, key: 'comboTier20', bonus: 400 },
 ];
 
-// Вехи по итоговому счёту партии (запрос игрока — «хочу набирать по 100000
-// очков и так далее»): разовый попап+бонус на каждый впервые пересечённый
-// рубеж ЭТОЙ партии (announcedMilestones ниже, сбрасывается в resetGame).
-// Бонус — доля от самого рубежа, поэтому крупные рубежи празднуются заметнее.
+// Score milestones for the current game: a one-time popup + bonus the first
+// time THIS game crosses each one (announcedMilestones below, reset in
+// resetGame). The bonus is a fraction of the milestone itself, so bigger
+// milestones are celebrated more.
 const SCORE_MILESTONES = [10000, 25000, 50000, 100000, 250000, 500000, 1000000];
 const SCORE_MILESTONE_BONUS_RATE = 0.05;
 
-// Иконки временных ивентов партии (game/events.js) — для тоста-анонса и
-// верхней панели, пока ивент активен.
+// Icons for the current-game event (game/events.js) - used by the toast
+// announcement and the top panel while an event is active.
 const EVENT_ICONS = {
   doublePoints: '⚡',
   bigShapeRain: '🧱',
   colorBonusRush: '🎨',
 };
 
-// ---------- элементы DOM ----------
+// ---------- DOM elements ----------
 const boardCanvas = document.getElementById('board-canvas');
 const boardCtx = boardCanvas.getContext('2d');
 const effectsCanvas = document.getElementById('effects-canvas');
 const effectsCtx = effectsCanvas.getContext('2d');
-// Превью потенциального комбо при перетаскивании (R05.3) делит этот же
-// overlay-канвас с движком остальных эффектов (fxEngine) — они не
-// пересекаются во времени: превью гаснет в onHoverEnd раньше, чем commit
-// доходит до анимации взрыва после реальной постановки.
+// The combo preview shown while dragging shares this overlay canvas with the
+// rest of the effects engine (fxEngine) - they never overlap in time: the
+// preview fades in onHoverEnd before a commit's explosion animation starts.
 const comboPreview = createComboPreview(effectsCtx);
-// Движок остальных canvas-эффектов (R19): взрыв линии, импульс размещения,
-// вспышка при недопустимом ходе, фейерверк полной очистки — могут идти
-// одновременно на одном канвасе, поэтому не self-driven функции, а слои
-// в общем движке (см. ui/animations.js, createEffectsEngine).
+// Engine for the rest of the canvas effects: line-clear burst, placement
+// pulse, invalid-drop flash, full-clear fireworks - these can run
+// simultaneously on one canvas, so they're layers in one shared engine
+// rather than separate self-driven functions (see ui/animations.js,
+// createEffectsEngine).
 const fxEngine = createEffectsEngine(effectsCtx);
 const dragCanvas = document.getElementById('drag-float');
 const boardWrap = document.getElementById('board-wrap');
-// Слой всплывающих "+N" за бонус (R19) — над полем, внутри board-wrap.
+// Layer for the popup "+N" bonus text, over the board, inside board-wrap.
 const bonusLayer = document.getElementById('bonus-layer');
 const trayEls = Array.from(document.querySelectorAll('.tray-slot'));
 const scoreLabelEl = document.getElementById('score-label');
@@ -130,36 +119,36 @@ const challengeLabelEl = document.getElementById('challenge-label');
 const challengeProgressEl = document.getElementById('challenge-progress');
 const overlayRoot = document.getElementById('overlay-root');
 
-// ---- состояние партии (партия не сохраняется между запусками — spec §12) ----
+// ---- game state (not persisted between runs) ----
 let board = new Board();
 let score = new Score();
-// Лёгкий ивент на текущую партию (game/events.js) — раз за партию, в
-// случайный момент, см. placeShape()/resetGame().
+// This game's light event (game/events.js) - once per game, random moment,
+// see placeShape()/resetGame().
 let eventDirector = createEventDirector();
 let shapes = generateShapeSet(board);
 let shapeColors = shapes.map(() => randomBlockColor());
 let colorGrid = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
 let totalScore = 0;
-let displayedScore = 0; // то, что реально показано в scoreValueEl прямо сейчас (см. updateScoreUI)
+let displayedScore = 0; // what's actually shown in scoreValueEl right now (see updateScoreUI)
 let highScore = 0;
 let cellSize = 0;
 let gameOver = false;
-// R05.5: сколько ходов подряд прошло без очистки линии — растёт «умную»
-// генерацию лотка (game/shapes.js) в сторону спасительных фигур, когда
-// игроку давно не удаётся ни одной комбо-очистки.
+// How many moves in a row passed without a line clear - biases the smart
+// tray generator (game/shapes.js) toward more forgiving shapes when the
+// player hasn't landed a clear in a while.
 let movesSinceClear = 0;
-// R05.7: метрики для достижений, которые не хранит ни Board, ни Score —
-// сбрасываются в resetGame() вместе с остальным состоянием партии.
-let consecutiveMoves = 0; // подряд успешных ходов без единого недопустимого дропа
-let hadInvalidThisGame = false; // хоть одна неудачная попытка за эту партию
-let shapesPlacedThisGame = 0; // фигур поставлено именно в этой партии (для «идеального старта»)
-let linesClearedThisGame = 0; // для мини-статистики на экране Game Over
-let bestComboThisGame = 0; // для мини-статистики на экране Game Over
-// Самый высокий уже показанный тир (COMBO_TIERS) ТЕКУЩЕЙ серии комбо —
-// сбрасывается в 0 вместе с самим комбо (см. placeShape), а не только в
-// resetGame(), иначе тир не смог бы показаться заново в новой серии той же партии.
+// Achievement metrics that neither Board nor Score track on their own -
+// reset in resetGame() along with the rest of the game state.
+let consecutiveMoves = 0; // successful moves in a row without a single invalid drop
+let hadInvalidThisGame = false; // whether there was ever an invalid attempt this game
+let shapesPlacedThisGame = 0; // shapes placed in this specific game (for the "perfect start" achievement)
+let linesClearedThisGame = 0; // for the Game Over mini-stats
+let bestComboThisGame = 0; // for the Game Over mini-stats
+// Highest combo tier (COMBO_TIERS) already shown for the CURRENT streak -
+// reset to 0 along with the combo itself (see placeShape), not just in
+// resetGame(), so a tier can fire again in a fresh streak within the same game.
 let announcedComboTier = 0;
-// Рубежи счёта (SCORE_MILESTONES), уже отмеченные в ЭТОЙ партии — сбрасывается в resetGame().
+// Score milestones (SCORE_MILESTONES) already announced THIS game - reset in resetGame().
 let announcedMilestones = new Set();
 
 function currentTheme() {
@@ -171,10 +160,10 @@ function render(highlight) {
 }
 
 /**
- * Остаётся ли цвет ещё где-то на поле (R05.10, бонус за полное удаление
- * цвета) — проверяет colorGrid, пропуская клетки из excludeKeys (набор
- * "row,col", уже взорванные этим ходом, но ещё не обнулённые в colorGrid на
- * момент вызова — вызывать ДО их обнуления).
+ * Whether a color still appears anywhere on the board (used by the
+ * full-color-clear bonus) - checks colorGrid, skipping cells in excludeKeys
+ * (a set of "row,col" strings already exploded this move but not yet
+ * zeroed out in colorGrid at call time - call this BEFORE zeroing them).
  * @param {string} cellColor
  * @param {Set<string>} excludeKeys
  * @returns {boolean}
@@ -198,10 +187,10 @@ function renderTray() {
   });
 }
 
-// Приводим внутреннее разрешение канваса к devicePixelRatio, чтобы блоки
-// были чёткими на «глянце» телефонов с ретиной — весь остальной код
-// (cellSize, drawBoard и т.д.) продолжает работать в CSS-пикселях,
-// масштаб на физические пиксели скрыт здесь через ctx.setTransform.
+// Scale the canvas's internal resolution to devicePixelRatio so blocks stay
+// crisp on retina phone screens - the rest of the code (cellSize, drawBoard,
+// etc.) keeps working in CSS pixels; the physical-pixel scaling is hidden
+// here behind ctx.setTransform.
 function fitCanvasToCss(canvas, cssSize) {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.round(cssSize * dpr);
@@ -220,17 +209,17 @@ function resize() {
   renderTray();
 }
 
-// Поле и лоток рисуются сразу же, ещё до async-инициализации ниже (тема,
-// язык, звук, персистентность и т.д.) — если что-то в main() упадёт
-// (например, устаревший закэшированный app.js на телефоне ссылается на
-// DOM-элемент, которого уже нет в свежей index.html), игрок всё равно
-// увидит поле и фигуры, а не пустой экран.
+// Draw the board and tray immediately, before the async init below (theme,
+// language, persistence, etc.) - if something in main() throws (e.g. a
+// stale cached app.js on a phone references a DOM element that's gone from
+// a fresh index.html), the player still sees the board and shapes instead
+// of a blank screen.
 resize();
 
 async function main() {
-  // Конфигурация из окружения (GAME_URL, STARS_AMOUNTS) — без бэкенда рядом
-  // (например, статика открыта напрямую файлом) config.js вернёт безопасный
-  // фолбэк, и игра всё равно останется играбельной (spec §Решения 9).
+  // Config from the environment (GAME_URL, STARS_AMOUNTS) - if there's no
+  // backend nearby (e.g. the static files opened directly, no server),
+  // config.js returns a safe fallback and the game stays playable.
   const config = await loadConfig();
 
   const persistence = createPersistence();
@@ -239,27 +228,27 @@ async function main() {
   const challenges = createChallenges({ persistence });
   const achievements = createAchievements({ persistence });
 
-  // Telegram SDK: ready()/expand() при старте (R02/R24/R25); вне Telegram —
-  // безопасный no-op (R46i).
+  // Telegram SDK: ready()/expand() at startup; outside Telegram this is a
+  // safe no-op.
   telegramBridge.init();
 
   await i18n.init();
 
-  // ---- тема: сигнал тёмная/светлая берём из Telegram, палитра — своя (§6) ----
+  // ---- theme: dark/light signal comes from Telegram, the palette is our own ----
   function applyTheme(scheme) {
     document.documentElement.dataset.theme = scheme === 'light' ? 'light' : 'dark';
     render();
     renderTray();
   }
   applyTheme(telegramBridge.getColorScheme());
-  telegramBridge.onThemeChange(applyTheme); // R22.1 — перекраска на лету
+  telegramBridge.onThemeChange(applyTheme); // live re-theme
 
-  // ---- отступ под собственный интерфейс Telegram (R05.11) ----
-  // Верхние кнопки шапки визуально видны, но без этого отступа на телефоне
-  // в них легко «промахнуться» — тач в этой полосе перехватывает нативную
-  // шапку/хэндл Telegram поверх WebView, а не саму игру. См. style.css:
-  // #app использует эту переменную в padding-top вместе с CSS env()
-  // (вырез экрана) через max() — берём более крупный из двух отступов.
+  // ---- padding for Telegram's own chrome ----
+  // The top-bar buttons are visible, but without this padding they're easy
+  // to miss-tap on a phone - touches in that strip get intercepted by
+  // Telegram's native header/handle over the WebView, not the game. See
+  // style.css: #app uses this custom property in padding-top together with
+  // CSS env() (device notch) via max() - whichever inset is larger wins.
   function applySafeAreaTop() {
     const top = telegramBridge.getContentSafeAreaTop();
     document.documentElement.style.setProperty('--tg-safe-area-top', `${top}px`);
@@ -267,11 +256,11 @@ async function main() {
   applySafeAreaTop();
   telegramBridge.onSafeAreaChange(applySafeAreaTop);
 
-  // ---- лучший результат (R12/R30) ----
+  // ---- high score ----
   highScore = await persistence.getItem('highScore', 0);
   highScoreValueEl.textContent = String(highScore);
 
-  // ---- тексты интерфейса через словарь (R44) ----
+  // ---- UI text via the dictionary ----
   function applyTexts() {
     scoreLabelEl.textContent = i18n.t('score');
     highScoreLabelEl.textContent = i18n.t('highScore');
@@ -283,36 +272,38 @@ async function main() {
   }
 
   languageBtn.addEventListener('click', () => {
-    // Смена языка (currentLanguage внутри i18n) происходит синхронно —
-    // persistence.setItem может уйти в Telegram CloudStorage (реальный
-    // сетевой запрос, иногда ощутимо медленный), поэтому специально НЕ ждём
-    // его здесь: интерфейс обновляется сразу, а сохранение выбора языка
-    // на сервере Telegram идёт в фоне (было: `await i18n.setLanguage(...)`
-    // перед applyTexts() — кнопка ощутимо «зависала» на время сетевого
-    // запроса, иногда пропуская нажатия целиком).
+    // The language switch (i18n's currentLanguage) happens synchronously,
+    // but persistence.setItem can go through Telegram CloudStorage (a real,
+    // sometimes noticeably slow network call) - so we deliberately do NOT
+    // await it here: the UI updates immediately, and saving the language
+    // choice to Telegram continues in the background. (Previously this
+    // awaited i18n.setLanguage(...) before applyTexts() - the button would
+    // visibly hang for the network round trip, sometimes swallowing taps
+    // entirely.)
     const next = i18n.getLanguage() === 'ru' ? 'en' : 'ru';
     i18n.setLanguage(next);
     applyTexts();
     renderTopPanel();
   });
 
-  // ---- верхняя панель под шапкой (R05.8) ----
-  // Раньше тут всегда был дневной челлендж — он общий на всех игроков и
-  // привязан к календарной дате, поэтому в рамках одной сессии выглядел
-  // «застывшим». Теперь тут достижение: если игрок сам закрепил одно (📌 в
-  // списке, ui/achievements.js) — показываем именно его; если нет — панель
-  // сама выбирает то, что скоро получится (наибольший прогресс/цель среди
-  // ещё не полученных, см. game/achievements.js getDisplayed) — так она
-  // всегда живая, даже без ручного выбора. Дневной челлендж остаётся только
-  // как запасной вариант на случай, если вообще всё уже получено.
+  // ---- top panel, under the header ----
+  // This used to always show the daily challenge - shared across all
+  // players and tied to the calendar date, so within one session it felt
+  // "frozen". Now it shows an achievement instead: if the player pinned one
+  // themselves (📌 in the list, ui/achievements.js), show that; otherwise
+  // the panel auto-picks whichever unlocked achievement is closest (highest
+  // progress/goal ratio among the still-locked ones, see
+  // game/achievements.js getDisplayed) - so it's always alive even without
+  // a manual pin. The daily challenge is now only a fallback for when
+  // everything has already been unlocked.
   let lastChallenge = null;
 
-  // Пока активен временный ивент партии (game/events.js) — он занимает эту
-  // же панель поверх ачивки/челленджа (R «ивент виден через подсказку»):
-  // выше приоритетом, потому что он временный и требует внимания игрока
-  // прямо сейчас, в отличие от «фонового» прогресса достижений. За пару
-  // ходов до старта — лёгкий безадресный намёк (R «добавить намёк заранее»),
-  // ниже приоритетом активного ивента, но выше ачивки/челленджа.
+  // While a current-game event (game/events.js) is active, it takes over
+  // this same panel above the achievement/challenge display - higher
+  // priority because it's temporary and needs the player's attention right
+  // now, unlike the "background" achievement progress. A couple of moves
+  // before it starts, a light unaddressed hint shows instead - lower
+  // priority than an active event, but higher than the achievement/challenge.
   async function renderTopPanel() {
     challengePanelEl.classList.remove('challenge-panel--event', 'challenge-panel--event-hint');
 
@@ -359,7 +350,7 @@ async function main() {
     await renderChallenge(await challenges.reportProgress(event));
   }
 
-  // ---- экран Game Over (R21/R27) ----
+  // ---- Game Over screen ----
   const gameOverScreen = createGameOverScreen({
     telegramBridge,
     persistence,
@@ -368,9 +359,9 @@ async function main() {
     onRestart: resetGame,
   });
 
-  // ---- достижения (R05.7): постоянный прогресс + экран списка + тосты ----
-  // R05.8: закрепление достижения (📌 в списке) сразу обновляет верхнюю
-  // панель (onPinChange), не дожидаясь следующего хода.
+  // ---- achievements: persistent progress + list screen + toasts ----
+  // Pinning an achievement (📌 in the list) updates the top panel right
+  // away (onPinChange), without waiting for the next move.
   const achievementsScreen = createAchievementsScreen({
     container: overlayRoot,
     i18n,
@@ -381,10 +372,10 @@ async function main() {
   });
   achievementsBtn.addEventListener('click', () => achievementsScreen.show());
 
-  // ---- лидерборд (глобальный, топ-20, всё время) ----
-  // Публичное чтение — /api/config уже показал, что бэкенда рядом может не
-  // быть (статика поднята локально) или он может ответить ошибкой (KV не
-  // настроен, спец §Решения 9) — экран должен мягко это показать, не падая.
+  // ---- leaderboard (global, top-20, all-time) ----
+  // Public read - /api/config already established the pattern that there
+  // may be no backend nearby (static served locally) or it may error out
+  // (KV not configured) - the screen has to show that gracefully, not crash.
   async function fetchLeaderboardData() {
     try {
       const response = await fetch('/api/leaderboard');
@@ -403,46 +394,46 @@ async function main() {
   });
   leaderboardBtn.addEventListener('click', () => leaderboardScreen.show());
 
-  // Отправка результата — fire-and-forget (тот же принцип, что и у записи
-  // рекорда в ui/gameover.js: не блокировать интерфейс сетевым запросом).
-  // Сервер сам проверяет initData и сам решает, лучше ли этот счёт уже
-  // сохранённого (GT в api/leaderboard.js) — здесь не нужно ничего знать
-  // про предыдущий результат игрока, просто шлём то, что есть.
+  // Submitting a score is fire-and-forget (same principle as saving the
+  // high score in ui/gameover.js: don't block the UI on a network call).
+  // The server verifies initData and decides on its own whether this score
+  // beats the stored one (GT in api/leaderboard.js) - no need to know the
+  // player's previous result here, just send what we have.
   function submitLeaderboardScore(score) {
     const initData = telegramBridge.getInitData();
-    if (!initData) return; // вне Telegram (или initData недоступна) — отправлять нечего
+    if (!initData) return; // outside Telegram (or initData unavailable) - nothing to send
     fetch('/api/leaderboard', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ initData, score }),
     }).catch(() => {
-      // Сбой сети/бэкенда не должен ничего ломать игроку (spec §Решения 9).
+      // A network/backend failure shouldn't break anything for the player.
     });
   }
 
   /**
-   * Прогоняет событие через трекер достижений и показывает тост для каждого,
-   * что разблокировался именно этим вызовом — reportEvent сам гарантирует,
-   * что одно и то же достижение не всплывёт дважды (см. game/achievements.js).
+   * Runs an event through the achievement tracker and shows a toast for
+   * each one it unlocks this call - reportEvent itself guarantees the same
+   * achievement never fires twice (see game/achievements.js).
    * @param {Record<string, number>} deltas
    */
   async function reportAchievements(deltas) {
     const newly = await achievements.reportEvent(deltas);
     for (const def of newly) {
       showAchievementUnlock({ container: document.body, i18n, def });
-      telegramBridge.haptic('lineClear'); // тот же «тяжёлый» impact, что и на очистке линии — разблокировка тоже событие-праздник
+      telegramBridge.haptic('lineClear'); // same "heavy" impact as a line clear - unlocking is a celebration too
     }
-    // Живой прогресс закреплённого достижения в верхней панели (R05.8) —
-    // обновляем на каждое событие, не только на разблокировку.
+    // Live progress of the pinned achievement in the top panel - update on
+    // every event, not just on unlock.
     await renderTopPanel();
   }
 
-  // R19: очки не «прыгают» мгновенно, а плавно докручиваются от прежнего
-  // значения к новому (animateScoreCountUp сама не делает ничего, если
-  // from===to — например, сразу после resetGame). Вызывается сразу после
-  // каждого изменения totalScore; для бонуса полной очистки (R06) — ещё раз
-  // отдельно, после паузы, когда сам totalScore уже вырос на FULL_CLEAR_BONUS
-  // (см. placeShape) — так «докрутка счётчика» видна именно в момент вспышки.
+  // The score doesn't jump instantly, it eases from the old value to the
+  // new one (animateScoreCountUp is a no-op if from===to, e.g. right after
+  // resetGame). Called right after every totalScore change; for the
+  // full-clear bonus, called again separately after the pause, once
+  // totalScore has already grown by FULL_CLEAR_BONUS (see placeShape) - so
+  // the counter's roll-up is visible right at the flash.
   function revealScore() {
     animateScoreCountUp(scoreValueEl, displayedScore, totalScore);
     displayedScore = totalScore;
@@ -462,12 +453,12 @@ async function main() {
     updateComboBadge(comboStreak);
   }
 
-  // Вехи по общему счёту партии (SCORE_MILESTONES) — запускать после КАЖДОГО
-  // изменения totalScore, откуда бы оно ни пришло (обычный ход или отложенный
-  // бонус полной очистки), чтобы рубеж не пропустить и не отметить дважды:
-  // announcedMilestones — источник истины «что уже отмечено в этой партии».
-  // Если один скачок счёта пересёк сразу несколько рубежей — один попап на
-  // самый высокий, бонусы за все пересечённые суммируются.
+  // Score milestones (SCORE_MILESTONES) - run after EVERY totalScore
+  // change, wherever it came from (a normal move or the delayed full-clear
+  // bonus), so a milestone is never missed or double-announced:
+  // announcedMilestones is the source of truth for what's already been
+  // flagged this game. If a single score jump crosses several milestones at
+  // once, one popup shows the highest, and the bonuses for all of them add up.
   function checkScoreMilestones() {
     const crossed = SCORE_MILESTONES.filter((m) => totalScore >= m && !announcedMilestones.has(m));
     if (crossed.length === 0) return;
@@ -503,8 +494,7 @@ async function main() {
   }
 
   function checkGameOver() {
-    // R05.5: если хоть одна фигура лотка ещё куда-то влезает — партия
-    // продолжается; ни одна не влезает — Game Over.
+    // If any tray shape still fits somewhere, the game continues; if none do, it's Game Over.
     if (!hasAnyValidMove(board, shapes)) {
       gameOver = true;
       if (!hadInvalidThisGame) reportAchievements({ gamesWithoutInvalid: 1 });
@@ -516,8 +506,8 @@ async function main() {
   function refillTrayIfEmpty() {
     if (shapes.every((s) => s === null)) {
       reportAchievements({ traySetsUsed: 1 });
-      // «Умная» генерация (R05.5) смотрит на текущее поле — see game/shapes.js
-      // pickForBoard. bigShapeRainActive — ивент партии (game/events.js).
+      // The smart generator looks at the current board - see game/shapes.js
+      // pickForBoard. bigShapeRainActive is this game's event (game/events.js).
       shapes = generateShapeSet(board, {
         bigShapeRainActive: eventDirector.isBigShapeRainActive(),
       });
@@ -532,22 +522,22 @@ async function main() {
     const shape = shapes[shapeIndex];
     if (!shape) return;
 
-    // Повторная проверка прямо перед постановкой (R07): ui/input.js уже
-    // проверил допустимость в момент отпускания пальца, но между этим и
-    // фактическим вызовом onDrop идёт анимация «влёта» (~140мс) — если игрок
-    // успел сверхбыстро начать и завершить ещё один драг за это время и тот
-    // уже поменял поле, здесь мы не должны попытаться поставить фигуру
-    // поверх уже занятых клеток (board.place иначе бросит исключение и
-    // оставит фигуру «зависшей» — ни на поле, ни в лотке).
+    // Re-check right before placing: ui/input.js already validated the
+    // position on pointer-up, but the "land" animation takes ~140ms between
+    // that and the actual onDrop call - if the player somehow started and
+    // finished another drag in that window and it already changed the
+    // board, we must not try to place this shape over now-occupied cells
+    // (board.place would throw and leave the shape stuck - neither on the
+    // board nor in the tray).
     if (!isValidDrop(board, shape, row, col)) return;
 
     const color = shapeColors[shapeIndex];
     const cellsPlaced = shape.cells.length;
 
-    // Бонус за закрытие пробела (R05.4) — считаем ДО place(), пока поле ещё
-    // в состоянии «как было»: findEnclosedPocket смотрит, была ли область
-    // пустых клеток вокруг фигуры изолированной и в точности её размера
-    // (иначе это просто ход в открытое место, без бонуса).
+    // Gap-fill bonus - computed BEFORE place(), while the board is still in
+    // its "before" state: findEnclosedPocket checks whether the empty
+    // region around the shape was isolated and exactly its size (otherwise
+    // it's just a move into open space, no bonus).
     const pocket = board.findEnclosedPocket(shape, row, col);
     const isGapFill = pocket.length === shape.cells.length;
 
@@ -564,27 +554,27 @@ async function main() {
 
     const linesCleared = clearedRows.length + clearedCols.length;
     const { points: rawPoints, comboStreak } = score.addMove({ cellsPlaced, linesCleared });
-    // Множители текущего ивента (game/events.js) читаем ДО onShapePlaced()
-    // ниже — тот может сам запустить/закончить ивент прямо этим ходом, а
-    // эффект должен подействовать только на ходы ПОСЛЕ анонса, не на тот, что
-    // его вызвал (иначе получилось бы, что игрок не видел тоста, а бонус уже
-    // задним числом применился к уже посчитанному ходу).
+    // Read the current event's multipliers BEFORE onShapePlaced() below -
+    // that call can itself start/end the event on this exact move, and the
+    // effect should only apply to moves AFTER the announcement, not the one
+    // that triggered it (otherwise the player wouldn't have seen the toast
+    // yet, but the bonus would already apply retroactively to a move that's
+    // already been scored).
     const scoreMultiplier = eventDirector.getScoreMultiplier();
     const colorBonusMultiplier = eventDirector.getColorBonusMultiplier();
-    // Ивент «двойные очки» умножает именно здесь, один раз — все дальнейшие
-    // использования points (totalScore, достижения, попап) читают уже
-    // готовое, удвоенное значение, повторно не домножая.
+    // The "double points" event multiplies right here, once - every later
+    // use of points (totalScore, achievements, popup) reads the already-
+    // doubled value, never multiplying again.
     const points = rawPoints * scoreMultiplier;
     linesClearedThisGame += linesCleared;
     bestComboThisGame = Math.max(bestComboThisGame, comboStreak);
 
-    // Именные комбо-тиры (COMBO_TIERS) — сбрасываем «уже показанное» вместе с
-    // самим комбо (comboStreak===0 означает серия оборвалась — 3 промаха
-    // подряд, см. game/score.js), иначе поднимаем на самый высокий впервые
-    // достигнутый именно СЕЙЧАС порог (t.threshold > announcedComboTier не
-    // даёт показать его повторно на каждом следующем ходе внутри той же
-    // серии). Безопасно вызывать каждый ход — если ничего нового не
-    // достигнуто, reachedTier просто не найдётся.
+    // Named combo tiers (COMBO_TIERS) - reset "already shown" along with the
+    // combo itself (comboStreak===0 means the streak broke - 3 misses in a
+    // row, see game/score.js); otherwise raise it to the highest threshold
+    // reached just NOW (tier.threshold > announcedComboTier stops it firing
+    // again on every following move within the same streak). Safe to call
+    // every move - if nothing new was reached, reachedTier just won't be found.
     if (comboStreak === 0) announcedComboTier = 0;
     let comboTierBonus = 0;
     const reachedTier = [...COMBO_TIERS].reverse().find(
@@ -601,14 +591,14 @@ async function main() {
       });
     }
 
-    // Захватываем ДО обновления movesSinceClear — «камбэк» (R05.7) считает
-    // именно то, что было накоплено ПЕРЕД этим ходом, не после его сброса.
+    // Captured BEFORE updating movesSinceClear - the "comeback" achievement
+    // counts what had built up BEFORE this move, not after it resets.
     const wasStruggling = movesSinceClear >= 6;
     movesSinceClear = linesCleared > 0 ? 0 : movesSinceClear + 1;
-    consecutiveMoves += 1; // недопустимые попытки (invalidDrop) сбрасывают эту серию в 0
+    consecutiveMoves += 1; // an invalid attempt (invalidDrop) resets this streak to 0
     shapesPlacedThisGame += 1;
 
-    // Ивент партии (game/events.js) — раз в игру, случайный момент/длительность.
+    // This game's event (game/events.js) - once per game, random moment/duration.
     const eventChange = eventDirector.onShapePlaced(shapesPlacedThisGame);
     if (eventChange?.type === 'started') {
       const active = eventDirector.getActive();
@@ -629,12 +619,12 @@ async function main() {
 
     const gapBonus = isGapFill ? pocket.length * GAP_FILL_BONUS_PER_CELL : 0;
     let colorClearBonus = 0;
-    const colorClearEvents = []; // { color, count, bonus, cx, cy } — по одному на каждый полностью удалённый цвет
+    const colorClearEvents = []; // { color, count, bonus, cx, cy } - one per fully-removed color
 
     if (linesCleared > 0) {
-      // сперва собираем клетки и их цвета (клетки на пересечении очищенной
-      // строки и столбца не должны попасть в список дважды и не должны
-      // читать уже обнулённый цвет), затем одним проходом чистим colorGrid
+      // First collect the cells and their colors (a cell at the intersection
+      // of a cleared row and column must not appear twice, and must not
+      // read an already-zeroed color), then clear colorGrid in one pass.
       const seen = new Set();
       const explodedCells = [];
       const addCell = (r, c) => {
@@ -650,11 +640,11 @@ async function main() {
         for (let r = 0; r < BOARD_SIZE; r++) addCell(r, c);
       }
 
-      // Бонус за полное удаление цвета с поля (R05.10) — считаем ДО обнуления
-      // colorGrid для explodedCells: для каждого встретившегося в этом взрыве
-      // цвета проверяем, остался ли он ГДЕ-ТО ЕЩЁ на поле вне взорванных
-      // клеток. Если нет — этот ход убрал цвет с поля целиком, бонус по
-      // числу клеток именно этого цвета, взорванных именно сейчас.
+      // Full-color-clear bonus - computed BEFORE zeroing colorGrid for
+      // explodedCells: for every color seen in this explosion, check
+      // whether it remains ANYWHERE ELSE on the board outside the exploded
+      // cells. If not, this move removed the color entirely - bonus scaled
+      // by how many cells of that color were exploded just now.
       const explodedKeys = new Set(explodedCells.map(({ row: r, col: c }) => `${r},${c}`));
       const colorCounts = new Map();
       for (const { color: cellColor } of explodedCells) {
@@ -675,16 +665,15 @@ async function main() {
         colorGrid[r][c] = null;
       }
       render();
-      // R19: интенсивность (число осколков, вторая волна) сама растёт с
-      // числом одновременно очищенных линий и серией комбо — «несколько
-      // линий одновременно» и «большое комбо» выглядят мощнее не по флагу,
-      // а по факту.
+      // Effect intensity (fragment count, second wave) grows on its own
+      // with the number of simultaneously cleared lines and the combo
+      // streak - "several lines at once" and "big combo" look more
+      // powerful by actual fact, not by a flag.
       fxEngine.add(createLineClearLayer(explodedCells, cellSize, { comboStreak, linesCleared }));
       telegramBridge.haptic('lineClear');
     } else {
-      // Обычная постановка без очистки линий — лёгкий тактильный импульс на
-      // клетках фигуры (R19, «установка фигуры»/«успешное размещение»),
-      // отдельный от более мощного взрыва при очистке.
+      // A normal placement with no line clear - a light haptic pulse on the
+      // shape's cells, separate from the bigger clear explosion.
       const placedCells = shape.cells.map(([dr, dc]) => ({ row: row + dr, col: col + dc }));
       fxEngine.add(createPlacementPulseLayer(placedCells, cellSize, color));
     }
@@ -699,8 +688,7 @@ async function main() {
       });
     }
 
-    // По одному попапу на каждый цвет, полностью удалённый этим ходом —
-    // тонированному в сам этот цвет (см. playBonusPopup), у своей области.
+    // One popup per color fully removed this move, tinted in that color (see playBonusPopup).
     for (const event of colorClearEvents) {
       playBonusPopup(bonusLayer, {
         x: (event.cx + 0.5) * cellSize,
@@ -731,15 +719,15 @@ async function main() {
       ...(linesCleared > 0 && wasStruggling ? { comebacks: 1 } : {}),
     });
 
-    // Полная очистка поля (R06) — самый мощный визуальный отклик в игре,
-    // плюс отдельный флэт-бонус +1500. Не срабатывает на самом ходе,
-    // который лишь размещает фигуру: только когда после него поле
-    // действительно опустело целиком, и ровно один раз на это событие —
-    // проверка board.isEmpty() выполняется один раз для этого конкретного
-    // вызова place(), не по таймеру/анимации, повторно сработать неоткуда.
-    // Короткая пауза (FULL_CLEAR_PAUSE_MS) отделяет обычный взрыв линии от
-    // большого праздничного отклика, чтобы они не слипались в один кадр —
-    // остальная игровая логика (тайл, проверка game over) паузу не ждёт.
+    // Full board clear - the biggest visual response in the game, plus a
+    // separate flat bonus. Doesn't fire on the move that merely places a
+    // shape: only when the board is actually empty afterward, and exactly
+    // once for that event - board.isEmpty() is checked once for this
+    // specific place() call, not on a timer/animation, so it can't fire
+    // again from anywhere else. The short pause (FULL_CLEAR_PAUSE_MS)
+    // separates the normal line-clear burst from the big celebration so
+    // they don't collide on the same frame - the rest of the game logic
+    // (tray refill, game-over check) doesn't wait for the pause.
     const isFullClear = linesCleared > 0 && board.isEmpty();
     if (isFullClear) {
       reportAchievements({
@@ -747,7 +735,7 @@ async function main() {
         ...(shapesPlacedThisGame <= 5 ? { perfectStarts: 1 } : {}),
       });
       setTimeout(() => {
-        if (gameOver) return; // партия уже перезапущена — не начисляем бонус поверх новой
+        if (gameOver) return; // the game already restarted - don't add the bonus on top of the new one
         fxEngine.add(createFullClearBurstLayer(cellSize, BOARD_SIZE));
         playBonusPopup(bonusLayer, {
           x: (BOARD_SIZE / 2) * cellSize,
@@ -758,10 +746,10 @@ async function main() {
         totalScore += FULL_CLEAR_BONUS;
         revealScore();
         checkScoreMilestones();
-        // Отдельным событием (не в основном reportGameEvent этого хода —
-        // тогда бонус посчитался бы в тот же вызов дважды с учётом задержки),
-        // только scoreDelta — linesCleared/comboStreak этот ход уже разово
-        // учтены в основном вызове ниже, второй раз их сюда не добавляем.
+        // A separate event (not folded into this move's main reportGameEvent
+        // below - the bonus would be counted twice given the delay), only
+        // scoreDelta - linesCleared/comboStreak were already counted once by
+        // the main call below, not added again here.
         reportGameEvent({ scoreDelta: FULL_CLEAR_BONUS });
       }, FULL_CLEAR_PAUSE_MS);
     }
@@ -779,11 +767,11 @@ async function main() {
     hadInvalidThisGame = true;
   }
 
-  // Вибро-тик при наведении на валидную позицию во время драга — только на
-  // переход на НОВУЮ клетку, а не на каждый пиксель движения (onHover зовётся
-  // на каждый pointermove): ключ — набор клеток-кандидатов, повтор с тем же
-  // ключом ничего не шлёт, иначе вибрация дребезжала бы непрерывно, пока
-  // палец просто чуть дрожит над одной и той же валидной позицией.
+  // Haptic tick when hovering a valid position during drag - only on moving
+  // to a NEW cell, not on every pixel of movement (onHover fires on every
+  // pointermove): the key is the set of candidate cells, a repeat with the
+  // same key sends nothing, otherwise it would buzz continuously while a
+  // finger just trembles slightly over the same valid position.
   let lastValidHoverKey = null;
 
   attachDragAndDrop({
@@ -815,9 +803,9 @@ async function main() {
     onInvalidDrop: () => invalidDrop(),
   });
 
-  // R05.7: метрики «начала партии» — общие для самого первого запуска и
-  // каждого resetGame(). lateNightGames — секретное достижение за игру
-  // глубокой ночью по времени устройства игрока.
+  // "Game started" metrics - shared by both the very first launch and every
+  // resetGame(). lateNightGames is a secret achievement for playing deep in
+  // the night on the player's own device clock.
   function reportNewGameStart() {
     const hour = new Date().getHours();
     reportAchievements({
@@ -826,9 +814,9 @@ async function main() {
     });
   }
 
-  // ---- новая партия поверх той же сессии (без перезагрузки страницы) ----
+  // ---- start a new game on top of the same session (no page reload) ----
   function resetGame() {
-    eventDirector.reset(); // новая партия — новый случайный момент/тип ивента
+    eventDirector.reset(); // new game - new random event moment/type
     board = new Board();
     score = new Score();
     shapes = generateShapeSet(board);
@@ -843,8 +831,8 @@ async function main() {
     bestComboThisGame = 0;
     announcedComboTier = 0;
     announcedMilestones = new Set();
-    // Сброс счёта — сразу, без анимации отсчёта вниз (animateScoreCountUp
-    // внутри updateScoreUI ничего не делает при from===to).
+    // Reset the score immediately, no count-down animation (animateScoreCountUp
+    // inside updateScoreUI is a no-op when from===to).
     displayedScore = 0;
     scoreValueEl.textContent = '0';
     gameOver = false;
@@ -859,7 +847,7 @@ async function main() {
   applyTexts();
   resize();
   playAppear(trayEls);
-  reportNewGameStart(); // партия из самого первого запуска main() тоже считается
+  reportNewGameStart(); // the very first main() launch counts as a game too
 }
 
 main();

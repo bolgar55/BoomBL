@@ -1,74 +1,74 @@
 // game/shapes.js
-// Каталог фигур игры (spec §Решения 1): относительные координаты клеток от (0,0).
-// Фигуры не вращаются (R10.1) — каждая ориентация внесена в каталог отдельной
-// статической записью, в модуле нет функции поворота.
+// Game shape catalog (spec §Decisions 1): cell coordinates relative to (0,0).
+// Shapes don't rotate (R10.1) - every orientation is its own static catalog
+// entry, there's no rotation function in this module.
 //
-// Генерация лотка (R05.5) — не полностью случайная: анализирует текущее
-// поле через game/board.js (findValidPlacements/canPlacePiece), чтобы не
-// выдавать фигуры, которые вообще некуда поставить, пока на поле есть место.
+// Tray generation (R05.5) is not fully random: it analyzes the current
+// board via game/board.js (findValidPlacements/canPlacePiece) to avoid
+// handing out shapes that have nowhere to go while space remains.
 
-import { BOARD_SIZE, findValidPlacements } from './board.js?v=0.5.0';
+import { BOARD_SIZE, findValidPlacements } from './board.js?v=0.5.1';
 
 /**
  * @typedef {{ id: string, cells: number[][] }} Shape
- * cells — массив пар [row, col], относительные координаты занятых клеток фигуры.
+ * cells - array of [row, col] pairs, relative coordinates of the shape's occupied cells.
  */
 
 /** @type {Shape[]} */
 const SHAPE_CATALOG = [
-  // Точка (1 клетка)
+  // Dot (1 cell)
   { id: 'dot', cells: [[0, 0]] },
 
-  // Домино (2 клетки)
+  // Domino (2 cells)
   { id: 'domino-h', cells: [[0, 0], [0, 1]] },
   { id: 'domino-v', cells: [[0, 0], [1, 0]] },
 
-  // Тримино-линия (3 клетки)
+  // Tromino line (3 cells)
   { id: 'tromino-h', cells: [[0, 0], [0, 1], [0, 2]] },
   { id: 'tromino-v', cells: [[0, 0], [1, 0], [2, 0]] },
 
-  // Уголок (3 клетки, 4 ориентации)
+  // Corner (3 cells, 4 orientations)
   { id: 'corner-1', cells: [[0, 0], [0, 1], [1, 0]] },
   { id: 'corner-2', cells: [[0, 0], [0, 1], [1, 1]] },
   { id: 'corner-3', cells: [[0, 1], [1, 0], [1, 1]] },
   { id: 'corner-4', cells: [[0, 0], [1, 0], [1, 1]] },
 
-  // Квадрат 2×2 (4 клетки)
+  // 2x2 square (4 cells)
   { id: 'square', cells: [[0, 0], [0, 1], [1, 0], [1, 1]] },
 
-  // Тетрамино-линия (4 клетки)
+  // Tetromino line (4 cells)
   { id: 'tetromino-i-h', cells: [[0, 0], [0, 1], [0, 2], [0, 3]] },
   { id: 'tetromino-i-v', cells: [[0, 0], [1, 0], [2, 0], [3, 0]] },
 
-  // Тетрамино L (4 клетки, 4 ориентации)
+  // Tetromino L (4 cells, 4 orientations)
   { id: 'tetromino-l-1', cells: [[0, 0], [1, 0], [2, 0], [2, 1]] },
   { id: 'tetromino-l-2', cells: [[0, 0], [0, 1], [0, 2], [1, 0]] },
   { id: 'tetromino-l-3', cells: [[0, 0], [0, 1], [1, 1], [2, 1]] },
   { id: 'tetromino-l-4', cells: [[1, 0], [1, 1], [1, 2], [0, 2]] },
 
-  // Тетрамино T (4 клетки, 4 ориентации)
+  // Tetromino T (4 cells, 4 orientations)
   { id: 'tetromino-t-1', cells: [[0, 0], [0, 1], [0, 2], [1, 1]] },
   { id: 'tetromino-t-2', cells: [[0, 0], [1, 0], [2, 0], [1, 1]] },
   { id: 'tetromino-t-3', cells: [[1, 0], [1, 1], [1, 2], [0, 1]] },
   { id: 'tetromino-t-4', cells: [[0, 1], [1, 0], [1, 1], [2, 1]] },
 
-  // Тетрамино S/Z (4 клетки, по 2 ориентации)
+  // Tetromino S/Z (4 cells, 2 orientations each)
   { id: 'tetromino-s-h', cells: [[0, 1], [0, 2], [1, 0], [1, 1]] },
   { id: 'tetromino-s-v', cells: [[0, 0], [1, 0], [1, 1], [2, 1]] },
   { id: 'tetromino-z-h', cells: [[0, 0], [0, 1], [1, 1], [1, 2]] },
   { id: 'tetromino-z-v', cells: [[0, 1], [1, 0], [1, 1], [2, 0]] },
 
-  // Пентамино-линия (5 клеток)
+  // Pentomino line (5 cells)
   { id: 'pentomino-i-h', cells: [[0, 0], [0, 1], [0, 2], [0, 3], [0, 4]] },
   { id: 'pentomino-i-v', cells: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]] },
 
-  // Пентамино-уголок (5 клеток, 4 ориентации)
+  // Pentomino corner (5 cells, 4 orientations)
   { id: 'pentomino-v-1', cells: [[0, 0], [0, 1], [0, 2], [1, 0], [2, 0]] },
   { id: 'pentomino-v-2', cells: [[0, 0], [0, 1], [0, 2], [1, 2], [2, 2]] },
   { id: 'pentomino-v-3', cells: [[0, 2], [1, 2], [2, 2], [2, 1], [2, 0]] },
   { id: 'pentomino-v-4', cells: [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2]] },
 
-  // Прямоугольник 2×3 (6 клеток, 2 ориентации)
+  // 2x3 rectangle (6 cells, 2 orientations)
   {
     id: 'rect-2x3-h',
     cells: [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2]],
@@ -78,7 +78,7 @@ const SHAPE_CATALOG = [
     cells: [[0, 0], [0, 1], [1, 0], [1, 1], [2, 0], [2, 1]],
   },
 
-  // Квадрат 3×3 (9 клеток)
+  // 3x3 square (9 cells)
   {
     id: 'square-3x3',
     cells: [
@@ -93,14 +93,14 @@ function cloneShape(source) {
   return { id: source.id, cells: source.cells.map(([r, c]) => [r, c]) };
 }
 
-/** Случайный выбор одной фигуры каталога без учёта поля — прежнее чистое поведение. */
+/** Picks a random catalog shape ignoring the board - the original pure-random behavior. */
 function pickPureRandom() {
   return cloneShape(SHAPE_CATALOG[Math.floor(Math.random() * SHAPE_CATALOG.length)]);
 }
 
-// Сдвигает клетки так, чтобы минимальные row/col стали 0, и сортирует —
-// два одинаковых по форме набора клеток после этого сравниваются просто
-// поэлементно, независимо от исходных координат/порядка.
+// Shifts cells so the minimum row/col become 0, then sorts - two cell sets
+// with the same shape then compare simply element-by-element, regardless of
+// original coordinates/order.
 function normalizeCells(cells) {
   let minRow = Infinity;
   let minCol = Infinity;
@@ -118,17 +118,17 @@ function cellsEqual(a, b) {
   return a.every(([r, c], i) => r === b[i][0] && c === b[i][1]);
 }
 
-// Пробелы крупнее самой большой фигуры каталога (9 клеток, square-3x3) точно
-// не могут совпасть ни с одной фигурой целиком — не тратим на них сравнение.
+// Gaps larger than the biggest catalog shape (9 cells, square-3x3) can never
+// exactly match a whole shape - skip comparing those.
 const MAX_MATCHABLE_POCKET_SIZE = 9;
 
 /**
- * Ищет на поле изолированный пробел (Board.findAllEnclosedPockets), форма
- * которого В ТОЧНОСТИ совпадает с какой-то фигурой каталога (фигуры не
- * вращаются, R10.1 — совпадение только в исходной ориентации) — игрок
- * попросил: если есть «дыра» под конкретную фигуру, эта фигура должна скоро
- * появиться в лотке, а не просто когда-нибудь повезёт. Возвращает первую
- * найденную такую фигуру или null, если подходящих пробелов нет.
+ * Looks for an isolated gap on the board (Board.findAllEnclosedPockets)
+ * whose shape EXACTLY matches a catalog shape (shapes don't rotate, R10.1 -
+ * match only in original orientation) - player request: if there's a "hole"
+ * shaped for a specific shape, that shape should appear in the tray soon,
+ * not just whenever luck allows. Returns the first matching shape found, or
+ * null if no gap matches.
  * @param {import('./board.js').Board} board
  * @returns {Shape | null}
  */
@@ -147,38 +147,40 @@ function findGapMatchingShape(board) {
   return null;
 }
 
-// ---------- «умная» генерация (упрощённая версия) ----------
-// Раньше здесь было четыре независимые системы (скрытый шанс комбо-подсказки,
-// доп. вес за «спасительность» хода, волна крупных фигур по случайным фазам,
-// подавление неровных фигур), которые перемножались друг на другом и было
-// трудно предсказать итоговое поведение — игрок попросил облегчить. Была
-// промежуточная версия с растущей по ходу партии «сложностью» (0→1), но она
-// на максимуме навсегда застревала в тяжёлом режиме до конца длинной партии —
-// тоже не вариант, убрали и её. Теперь всего одна система:
-// «гибкость» — вес фигуры растёт с числом её позиций на поле, плюс два
-// постоянных множителя (крупные фигуры чуть чаще, неровные — заметно реже)
-// без всякой прогрессии по ходу партии. Жёсткий фильтр «есть хоть одна
-// допустимая позиция» (findValidPlacements) остаётся первым и решающим.
+// ---------- "smart" generation (simplified version) ----------
+// This used to be four independent systems (hidden combo-hint chance, extra
+// weight for "saving" moves, a large-shape wave on random phases, uneven-
+// shape suppression) multiplied together, making the final behavior hard to
+// predict - player asked to simplify. There was an intermediate version with
+// "difficulty" growing over the game (0->1), but at max it got permanently
+// stuck in hard mode for the rest of a long game - not viable either, also
+// removed. Now there's just one system:
+// "flexibility" - a shape's weight grows with its number of positions on
+// the board, plus two constant multipliers (large shapes slightly more
+// common, uneven ones noticeably rarer) with no progression over the game.
+// The hard filter "has at least one valid position" (findValidPlacements)
+// stays first and decisive.
 
-const LARGE_SHAPE_CELLS = 6; // от rect-2x3 (6 клеток) и крупнее — «крупная» фигура
-const LARGE_SHAPE_BOOST = 3; // постоянный множитель веса крупных фигур
-const LARGE_SHAPE_BOOST_EVENT = 7; // множитель во время ивента «дождь крупных фигур»
+const LARGE_SHAPE_CELLS = 6; // rect-2x3 (6 cells) and up counts as "large"
+const LARGE_SHAPE_BOOST = 3; // constant weight multiplier for large shapes
+const LARGE_SHAPE_BOOST_EVENT = 7; // multiplier during the "big shape rain" event
 
 /**
- * Множитель веса для крупных фигур — постоянный (без прогрессии по партии),
- * но ощутимо выше во время ивента «дождь крупных фигур» (game/events.js), иначе
- * сам ивент был бы неотличим от обычной игры.
+ * Weight multiplier for large shapes - constant (no progression over the
+ * game), but noticeably higher during the "big shape rain" event
+ * (game/events.js), otherwise the event would be indistinguishable from
+ * normal play.
  */
 function largeShapeMultiplier(cellCount, bigShapeRainActive) {
   if (cellCount < LARGE_SHAPE_CELLS) return 1;
   return bigShapeRainActive ? LARGE_SHAPE_BOOST_EVENT : LARGE_SHAPE_BOOST;
 }
 
-// «Неровные» фигуры — маленькие уголки-тримино (corner-1..4), большие уголки
-// (пентамино-V, pentomino-v-1..4), зигзаги (S/Z-тетромино), L- и Т-тетромино —
-// тайлятся хуже прямых/прямоугольных фигур того же размера и чаще оставляют
-// дыры в 1-2 клетки. Не убираем совсем — просто постоянно снижаем вес выбора,
-// без прогрессии по ходу партии.
+// "Uneven" shapes - small tromino corners (corner-1..4), big corners
+// (pentomino-V, pentomino-v-1..4), zigzags (S/Z tetrominoes), L and T
+// tetrominoes - tile worse than straight/rectangular shapes of the same
+// size and more often leave 1-2 cell holes. Not removed entirely - just
+// permanently lowered selection weight, no progression over the game.
 const HOLE_PRONE_SHAPE_IDS = new Set([
   'corner-1', 'corner-2', 'corner-3', 'corner-4',
   'pentomino-v-1', 'pentomino-v-2', 'pentomino-v-3', 'pentomino-v-4',
@@ -188,12 +190,12 @@ const HOLE_PRONE_SHAPE_IDS = new Set([
 ]);
 const HOLE_PRONE_SUPPRESS = 0.2;
 
-/** Множитель веса для «неровных» фигур — 1 для всех остальных. */
+/** Weight multiplier for "uneven" shapes - 1 for everything else. */
 function holeProneMultiplier(id) {
   return HOLE_PRONE_SHAPE_IDS.has(id) ? HOLE_PRONE_SUPPRESS : 1;
 }
 
-/** Взвешенный случайный выбор — chance каждого элемента пропорционален его весу. */
+/** Weighted random pick - each item's chance is proportional to its weight. */
 function weightedPick(items, weightOf) {
   const weights = items.map(weightOf);
   const total = weights.reduce((sum, w) => sum + w, 0);
@@ -206,18 +208,19 @@ function weightedPick(items, weightOf) {
 }
 
 /**
- * Выбирает одну фигуру каталога с учётом текущего поля (R05.5):
- * 1) сначала оставляет только фигуры, у которых есть хоть одна допустимая
- *    позиция на этом поле (findValidPlacements) — не выдаём заведомо
- *    непригодную фигуру, пока есть выбор;
- * 2) вес растёт с числом позиций фигуры («гибкие» фигуры чуть вероятнее);
- * 3) домножает на largeShapeMultiplier и holeProneMultiplier — оба постоянны
- *    весь ход партии, без прогрессии.
- * Если на поле физически не помещается ни одна фигура каталога (крайний
- * случай — доска уже фактически проиграна), возвращает чистый случайный
- * выбор: подбирать тут больше не из чего.
+ * Picks one catalog shape considering the current board (R05.5):
+ * 1) first keeps only shapes with at least one valid position on this board
+ *    (findValidPlacements) - don't hand out a guaranteed-unplayable shape
+ *    while there's a choice;
+ * 2) weight grows with the shape's number of positions ("flexible" shapes
+ *    are slightly more likely);
+ * 3) multiplies by largeShapeMultiplier and holeProneMultiplier - both
+ *    constant for the whole game, no progression.
+ * If no catalog shape physically fits the board at all (edge case - the
+ * board is effectively already lost), falls back to pure random: there's
+ * nothing meaningful left to pick from.
  * @param {import('./board.js').Board} board
- * @param {{bigShapeRainActive?: boolean}} [context] - bigShapeRainActive: активен ли ивент «дождь крупных фигур» (game/events.js)
+ * @param {{bigShapeRainActive?: boolean}} [context] - bigShapeRainActive: whether the "big shape rain" event is active (game/events.js)
  * @returns {Shape}
  */
 function pickForBoard(board, context = {}) {
@@ -241,17 +244,17 @@ function pickForBoard(board, context = {}) {
 }
 
 /**
- * Возвращает набор из 3 фигур каталога для лотка (могут повторяться — как
- * в оригинальной игре). Без board — прежнее чистое случайное поведение
- * (например, самый первый лоток партии, когда поле заведомо пустое, или
- * вызов без контекста поля). С board — «умная» генерация (R05.5): каждая
- * из 3 фигур подбирается через pickForBoard независимо, глядя на одно и то
- * же текущее состояние поля (все три ещё не размещены, поле одно и то же
- * для всех трёх). Если на поле прямо сейчас есть пробел, форма которого
- * точно совпадает с какой-то фигурой каталога (findGapMatchingShape), одна
- * из трёх фигур лотка гарантированно — именно она: игрок попросил, чтобы
- * такая «дыра под фигуру» не оставалась на волю случая, а закрывалась уже
- * следующим набором лотка.
+ * Returns a set of 3 catalog shapes for the tray (duplicates allowed - as
+ * in the original game). Without board - the original pure-random behavior
+ * (e.g. the very first tray of a game when the board is guaranteed empty,
+ * or a call with no board context). With board - "smart" generation
+ * (R05.5): each of the 3 shapes is picked independently via pickForBoard,
+ * looking at the same current board state (none of the three is placed
+ * yet, same board for all three). If the board currently has a gap whose
+ * shape exactly matches a catalog shape (findGapMatchingShape), one of the
+ * three tray shapes is guaranteed to be that shape: player request - such a
+ * "shape-shaped hole" shouldn't be left to chance, it should be filled by
+ * the very next tray set.
  * @param {import('./board.js').Board} [board]
  * @param {{bigShapeRainActive?: boolean}} [context]
  * @returns {Shape[]}

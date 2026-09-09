@@ -1,9 +1,9 @@
 // game/achievements.js
-// Достижения (R05.7) — в отличие от game/challenges.js (ежедневный, сбрасывается
-// по дате), достижения постоянны: прогресс копится через все партии и сессии,
-// каждое достижение разблокируется максимум один раз и остаётся полученным
-// навсегда. Модуль не знает про DOM/Telegram — чистое хранение метрик и каталог,
-// как и persistence/challenges, с инжектируемой persistence для тестируемости.
+// Achievements (R05.7) - unlike game/challenges.js (daily, resets by date),
+// achievements are permanent: progress accumulates across all games and
+// sessions, each achievement unlocks at most once and stays unlocked
+// forever. Module knows nothing about DOM/Telegram - just metric storage and
+// a catalog, like persistence/challenges, with injectable persistence for testability.
 
 /**
  * @typedef {{
@@ -17,7 +17,7 @@
 
 /** @type {AchievementDef[]} */
 const ACHIEVEMENTS = [
-  // ---- очки (простые/средние/редкие) ----
+  // ---- score (common/uncommon/rare) ----
   { id: 'score-500', tier: 'common', icon: '🏆', metric: 'lifetimeScore', goal: 500 },
   { id: 'score-2000', tier: 'common', icon: '🏆', metric: 'lifetimeScore', goal: 2000 },
   { id: 'score-10000', tier: 'uncommon', icon: '🏆', metric: 'lifetimeScore', goal: 10000 },
@@ -30,20 +30,20 @@ const ACHIEVEMENTS = [
   { id: 'game-score-50000', tier: 'epic', icon: '🌌', metric: 'bestGameScore', goal: 50000 },
   { id: 'game-score-100000', tier: 'epic', icon: '👑', metric: 'bestGameScore', goal: 100000 },
 
-  // ---- комбо ----
+  // ---- combo ----
   { id: 'first-combo', tier: 'common', icon: '🔥', metric: 'maxComboStreak', goal: 1 },
   { id: 'combo-streak-3', tier: 'uncommon', icon: '🔥', metric: 'maxComboStreak', goal: 3 },
   { id: 'combo-streak-5', tier: 'rare', icon: '🔥', metric: 'maxComboStreak', goal: 5 },
   { id: 'combo-streak-8', tier: 'epic', icon: '☄️', metric: 'maxComboStreak', goal: 8 },
 
-  // ---- линии ----
+  // ---- lines ----
   { id: 'clear-line-1', tier: 'common', icon: '📏', metric: 'totalLinesCleared', goal: 1 },
   { id: 'clear-lines-50', tier: 'uncommon', icon: '📏', metric: 'totalLinesCleared', goal: 50 },
   { id: 'clear-lines-200', tier: 'rare', icon: '📐', metric: 'totalLinesCleared', goal: 200 },
   { id: 'multi-line-2', tier: 'uncommon', icon: '💥', metric: 'maxLinesInOneMove', goal: 2 },
   { id: 'multi-line-3', tier: 'rare', icon: '💥', metric: 'maxLinesInOneMove', goal: 3 },
 
-  // ---- полная очистка и бонус за пробел ----
+  // ---- full clear and gap bonus ----
   { id: 'full-clear-1', tier: 'rare', icon: '✨', metric: 'totalFullClears', goal: 1 },
   { id: 'full-clear-5', tier: 'epic', icon: '💫', metric: 'totalFullClears', goal: 5 },
   { id: 'gap-bonus-1', tier: 'common', icon: '🕳️', metric: 'totalGapBonuses', goal: 1 },
@@ -51,13 +51,13 @@ const ACHIEVEMENTS = [
   { id: 'color-clear-1', tier: 'uncommon', icon: '🎨', metric: 'totalColorClears', goal: 1 },
   { id: 'color-clear-15', tier: 'rare', icon: '🌈', metric: 'totalColorClears', goal: 15 },
 
-  // ---- объём игры ----
+  // ---- play volume ----
   { id: 'shapes-100', tier: 'common', icon: '🧩', metric: 'totalShapesPlaced', goal: 100 },
   { id: 'shapes-1000', tier: 'uncommon', icon: '🧩', metric: 'totalShapesPlaced', goal: 1000 },
   { id: 'games-10', tier: 'common', icon: '🎮', metric: 'gamesPlayed', goal: 10 },
   { id: 'games-50', tier: 'uncommon', icon: '🎮', metric: 'gamesPlayed', goal: 50 },
 
-  // ---- мастерство хода ----
+  // ---- move mastery ----
   { id: 'move-score-100', tier: 'uncommon', icon: '⚡', metric: 'maxSingleMoveScore', goal: 100 },
   { id: 'move-score-500', tier: 'rare', icon: '⚡', metric: 'maxSingleMoveScore', goal: 500 },
   { id: 'streak-moves-10', tier: 'rare', icon: '⛓️', metric: 'maxConsecutiveMoves', goal: 10 },
@@ -67,7 +67,7 @@ const ACHIEVEMENTS = [
   { id: 'full-tray-user', tier: 'common', icon: '📦', metric: 'traySetsUsed', goal: 20 },
   { id: 'comeback', tier: 'epic', icon: '💪', metric: 'comebacks', goal: 1 },
 
-  // ---- редкие/секретные ----
+  // ---- rare/secret ----
   { id: 'secret-perfect-start', tier: 'secret', icon: '🎇', metric: 'perfectStarts', goal: 1 },
   { id: 'secret-night-owl', tier: 'secret', icon: '🌙', metric: 'lateNightGames', goal: 1 },
 ];
@@ -81,7 +81,7 @@ function defaultMetrics() {
 }
 
 /**
- * Создаёт объект работы с достижениями — постоянный прогресс через persistence.
+ * Creates an achievements handler - persistent progress via persistence.
  * @param {{persistence: {getItem: Function, setItem: Function}}} deps
  * @returns {{
  *   reportEvent: (deltas: Record<string, number>) => Promise<AchievementDef[]>,
@@ -95,8 +95,8 @@ export function createAchievements(deps = {}) {
   async function load() {
     if (state) return state;
     const stored = await persistence.getItem(STORAGE_KEY, null);
-    // defaultMetrics() гарантирует, что новые метрики (добавленные в каталог
-    // позже, чем сохранённый прогресс игрока) не окажутся undefined.
+    // defaultMetrics() ensures new metrics (added to the catalog after the
+    // player's saved progress) don't end up undefined.
     state = {
       metrics: { ...defaultMetrics(), ...(stored?.metrics ?? {}) },
       unlocked: stored?.unlocked ?? {},
@@ -122,14 +122,14 @@ export function createAchievements(deps = {}) {
   }
 
   /**
-   * Обновляет метрики по событию хода/партии и возвращает достижения,
-   * разблокированные именно этим вызовом (пустой массив — если ничего
-   * нового). Ключ вида 'max:метрика' обновляет метрику через Math.max
-   * (лучшие результаты — комбо, очки за ход и т.п.), обычный ключ — через
-   * прибавление (счётчики событий). Одно и то же достижение разблокируется
-   * не более одного раза за всю историю игрока — unlocked проверяется и
-   * записывается синхронно внутри одного вызова, повторно тот же id уже
-   * не пройдёт (see checkNewlyUnlocked: `if (state.unlocked[def.id]) continue`).
+   * Updates metrics from a move/game event and returns achievements
+   * unlocked by this exact call (empty array if nothing new). A key like
+   * 'max:metric' updates the metric via Math.max (best results - combo,
+   * points per move, etc.), a plain key updates via addition (event
+   * counters). The same achievement unlocks at most once in the player's
+   * whole history - unlocked is checked and written synchronously within
+   * one call, so the same id won't pass again
+   * (see checkNewlyUnlocked: `if (state.unlocked[def.id]) continue`).
    * @param {Record<string, number>} deltas
    * @returns {Promise<AchievementDef[]>}
    */
@@ -158,18 +158,18 @@ export function createAchievements(deps = {}) {
     };
   }
 
-  /** Полный список достижений с текущим прогрессом/статусом — для экрана достижений. */
+  /** Full achievement list with current progress/status - for the achievements screen. */
   async function getAll() {
     await load();
     return ACHIEVEMENTS.map(toEntry);
   }
 
   /**
-   * Закреплённое игроком достижение (R05.8) — показывается в верхней панели
-   * вместо статичного дневного челленджа, если выбрано. id=null снимает
-   * закрепление. Закрепить можно любое достижение каталога, включая ещё не
-   * полученное (это и есть основной сценарий — следить за прогрессом) и
-   * секретное (тогда в панели тоже будет «???», как и в списке).
+   * The achievement the player pinned (R05.8) - shown in the top bar
+   * instead of the static daily challenge, if selected. id=null clears the
+   * pin. Any catalog achievement can be pinned, including one not yet
+   * unlocked (this is the main use case - tracking progress) and secret
+   * ones (the bar then also shows "???", same as the list).
    * @param {string|null} id
    */
   async function setPinned(id) {
@@ -178,7 +178,7 @@ export function createAchievements(deps = {}) {
     await save();
   }
 
-  /** Текущее закреплённое достижение с прогрессом, или null, если ничего не закреплено. */
+  /** Currently pinned achievement with progress, or null if nothing is pinned. */
   async function getPinned() {
     await load();
     if (!state.pinned) return null;
@@ -187,15 +187,15 @@ export function createAchievements(deps = {}) {
   }
 
   /**
-   * Что показывать в верхней панели прямо сейчас (R05.8): если игрок сам
-   * закрепил достижение — оно и есть ответ. Если нет — автовыбор того,
-   * которое скоро получится: среди ещё не полученных берём с наибольшим
-   * отношением progress/goal (ближе всего к цели). Секретные в автовыбор не
-   * попадают — их прогресс не должен «спойлериться» без явного решения
-   * игрока закрепить именно секрет руками (getPinned/setPinned это всё ещё
-   * разрешают). Если вообще всё уже получено (или каталог пуст) — null,
-   * вызывающий код сам решает, чем заполнить панель в этом случае (в app.js —
-   * прежний дневной челлендж).
+   * What to show in the top bar right now (R05.8): if the player pinned an
+   * achievement themselves, that's the answer. Otherwise auto-pick the one
+   * closest to completion: among those not yet unlocked, take the highest
+   * progress/goal ratio. Secret achievements are excluded from auto-pick -
+   * their progress shouldn't be spoiled without the player explicitly
+   * pinning that secret by hand (getPinned/setPinned still allow that). If
+   * everything is already unlocked (or the catalog is empty) - null, caller
+   * decides what to fill the bar with in that case (in app.js, the previous
+   * daily challenge).
    * @returns {Promise<(AchievementDef & {progress:number, unlocked:boolean, unlockedAt:number|null, pinnedByUser:boolean})|null>}
    */
   async function getDisplayed() {

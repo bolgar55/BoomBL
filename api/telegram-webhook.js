@@ -1,18 +1,18 @@
 // api/telegram-webhook.js
-// Серверлесс-функция Vercel — точка входа вебхука Telegram-бота (spec §Решения 11:
-// бот работает в режиме webhook, не long-polling — единственный режим,
-// совместимый с серверлесс-функциями). Вся логика разбора апдейтов — в
-// bot/bot-logic.js (граница `bot-logic` — interfaces.md), здесь только приём
-// HTTP-запроса и ответ Telegram.
+// Vercel serverless function — entry point for the Telegram bot webhook (spec
+// §Decisions 11: the bot runs in webhook mode, not long-polling — the only
+// mode compatible with serverless functions). All update-parsing logic lives
+// in bot/bot-logic.js (boundary `bot-logic` — interfaces.md); this file only
+// receives the HTTP request and replies to Telegram.
 //
-// Точка входа/интеграция с внешним API — проверяется вручную при ревью,
-// а не юнит-тестом (interfaces.md: швы для тестов).
+// Entry point/external API integration — verified manually in review, not by
+// a unit test (interfaces.md: test seams).
 import { createBotLogic } from '../bot/bot-logic.js';
 
-// GAME_URL — открытое место спецификации (см. telegram/bridge.js), передаём
-// его сюда из переменной окружения Vercel (тикет 07, интеграция): сам
-// bot-logic.js для этого не меняется, только точка вызова его фабрики —
-// gameUrl уже был инжектируемым параметром её deps.
+// GAME_URL — an open spec item (see telegram/bridge.js), passed in here from
+// a Vercel environment variable (ticket 07, integration): bot-logic.js itself
+// doesn't change for this, only its call site — gameUrl was already an
+// injectable parameter of its deps.
 const botLogic = createBotLogic({ gameUrl: process.env.GAME_URL || undefined });
 
 export default async function handler(req, res) {
@@ -25,11 +25,11 @@ export default async function handler(req, res) {
   try {
     await botLogic.handleUpdate(req.body);
   } catch {
-    // Ошибка обработки апдейта не должна превращаться в 5xx для Telegram —
-    // иначе он будет бесконечно повторять доставку одного и того же апдейта.
+    // An error while processing an update must not turn into a 5xx for
+    // Telegram — otherwise it will keep redelivering the same update forever.
   }
 
-  // Telegram ожидает быстрый 200 OK независимо от исхода обработки.
+  // Telegram expects a fast 200 OK regardless of how processing went.
   res.statusCode = 200;
   res.end('ok');
 }

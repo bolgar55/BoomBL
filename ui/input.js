@@ -1,23 +1,23 @@
 // ui/input.js
-// Ввод игрока: перетаскивание фигуры на поле мышью и пальцем через единый
-// Pointer Events API (он абстрагирует mouse/touch/pen одним набором событий,
-// поэтому отдельная touch-обвязка не нужна), плюс логика подсказки.
-// Модуль не хранит состояние партии — работает поверх board/shapes,
-// которые ему передаёт вызывающий код (index.html).
+// Player input: dragging a shape onto the board with mouse or finger via the
+// unified Pointer Events API (it abstracts mouse/touch/pen into one event
+// set, so no separate touch handling is needed), plus the hint logic.
+// Stateless — works on top of the board/shapes passed in by the caller
+// (index.html).
 //
-// Чистая логика (проверка допустимости позиции, поиск подсказки) вынесена в
-// отдельные экспортируемые функции и покрыта тестами в input.test.js.
-// DOM-обвязка (attachDragAndDrop) не тестируется юнит-тестами — см.
-// interfaces.md, раздел «Швы для тестов»: ui проверяется вручную при ревью.
+// Pure logic (position validity check, hint search) lives in separate
+// exported functions covered by tests in input.test.js. The DOM wiring
+// (attachDragAndDrop) isn't unit-tested — see interfaces.md, "Test seams":
+// UI is checked manually during review.
 
-import { BOARD_SIZE } from '../game/board.js?v=0.5.0';
-import { computeCellSize, pixelToCell, drawShapeGhost } from './render.js?v=0.5.0';
+import { BOARD_SIZE } from '../game/board.js?v=0.5.1';
+import { computeCellSize, pixelToCell, drawShapeGhost } from './render.js?v=0.5.1';
 
 /**
- * Определяет, допустима ли позиция для фигуры прямо сейчас. Это и есть шов
- * «определение недопустимой позиции при драге»: во время перетаскивания
- * курсор/палец может быть ещё вне поля (row/col не определены) — такая
- * позиция всегда недопустима; иначе решение делегируется board.canPlace.
+ * Determines whether a position is valid for the shape right now. This is
+ * the seam for "detecting an invalid position during drag": while dragging,
+ * the cursor/finger may still be off the board (row/col undefined) — that
+ * position is always invalid; otherwise the decision is delegated to board.canPlace.
  * @param {{canPlace(shape:object, row:number, col:number): boolean}} board
  * @param {{cells:number[][]}} shape
  * @param {number|null|undefined} row
@@ -32,11 +32,10 @@ export function isValidDrop(board, shape, row, col) {
 }
 
 /**
- * Ищет первую валидную позицию для одной из фигур лотка — используется
- * кнопкой «Подсказка» (R15). Порядок обхода фиксирован и детерминирован:
- * сначала по фигурам в порядке лотка, для каждой — по клеткам поля сверху
- * вниз, слева направо. Пустые слоты лотка (null — фигура уже поставлена)
- * пропускаются.
+ * Finds the first valid position for one of the tray shapes — used by the
+ * "Hint" button (R15). Traversal order is fixed and deterministic: shapes in
+ * tray order, and for each, board cells top-to-bottom, left-to-right. Empty
+ * tray slots (null — shape already placed) are skipped.
  * @param {{canPlace(shape:object, row:number, col:number): boolean}} board
  * @param {({cells:number[][]}|null)[]} shapes
  * @returns {{shapeIndex:number, row:number, col:number}|null}
@@ -56,12 +55,12 @@ export function findHint(board, shapes) {
   return null;
 }
 
-/** Клетки поля, которые заняла бы фигура при постановке в (row, col). */
+/** Board cells the shape would occupy if placed at (row, col). */
 export function shapeCells(shape, row, col) {
   return shape.cells.map(([dr, dc]) => ({ row: row + dr, col: col + dc }));
 }
 
-/** Габариты фигуры в клетках (ширина/высота её ограничивающего прямоугольника). */
+/** Shape bounds in cells (width/height of its bounding box). */
 export function shapeBounds(shape) {
   let maxRow = 0;
   let maxCol = 0;
@@ -72,19 +71,19 @@ export function shapeBounds(shape) {
   return { width: maxCol + 1, height: maxRow + 1 };
 }
 
-/** Клетка приподнимается над пальцем/курсором на столько клеток, чтобы игрок видел всю фигуру. */
+/** How many cells the shape is lifted above the finger/cursor, so the player can see the whole shape. */
 const LIFT_CELLS = 1.2;
-// Коэффициент сглаживания следования за курсором (0..1 за кадр) — чем выше,
-// тем «резче» отклик; 0.32 даёт плавное, но не «резиновое» следование.
+// Smoothing factor for following the cursor (0..1 per frame) — higher is
+// "snappier"; 0.32 gives smooth but not "rubbery" tracking.
 const FOLLOW_EASE = 0.32;
-const LAND_MS = 140; // анимация посадки в валидную позицию
-const RETURN_MS = 200; // анимация возврата в лоток при недопустимой позиции
+const LAND_MS = 140; // animation for landing in a valid position
+const RETURN_MS = 200; // animation for returning to the tray on an invalid position
 
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-/** Пересекает ли ограничивающий прямоугольник фигуры в (row, col) сетку поля хоть немного. */
+/** Whether the shape's bounding box at (row, col) overlaps the board grid at all. */
 function overlapsBoard(row, col, bounds) {
   return (
     row + bounds.height > 0 &&
@@ -95,27 +94,27 @@ function overlapsBoard(row, col, bounds) {
 }
 
 /**
- * Подключает drag-and-drop к слотам лотка и полю через Pointer Events.
- * Перетаскиваемая фигура рисуется один раз в overlay-canvas (dragCanvas,
- * position:fixed — см. style.css) и дальше просто двигается transform'ом:
- * плавно следует за курсором/пальцем по всему экрану (не только над полем),
- * а при отпускании либо красиво «влетает» в клетку поля, либо возвращается
- * в лоток — обе анимации через requestAnimationFrame с ease-out.
- * DOM-обвязка — проверяется вручную при ревью, не юнит-тестами.
+ * Wires up drag-and-drop for tray slots and the board via Pointer Events.
+ * The dragged shape is drawn once into an overlay canvas (dragCanvas,
+ * position:fixed — see style.css) and then just moved via transform: it
+ * smoothly follows the cursor/finger across the whole screen (not just over
+ * the board), and on release either "lands" nicely into a board cell or
+ * returns to the tray — both animated via requestAnimationFrame with ease-out.
+ * DOM wiring — checked manually during review, not unit-tested.
  *
  * @param {object} opts
- * @param {HTMLCanvasElement} opts.boardCanvas - канвас поля (для координат и размера)
- * @param {HTMLCanvasElement} opts.dragCanvas - fixed-overlay канвас перетаскиваемой фигуры
- * @param {HTMLElement[]} opts.trayEls - канвасы слотов лотка (data-index = индекс фигуры)
- * @param {() => object} opts.getBoard - текущий Board
- * @param {() => (object|null)[]} opts.getShapes - текущие фигуры лотка (с цветами через getShapeColor)
- * @param {(index:number) => string} opts.getShapeColor - цвет фигуры по индексу лотка
- * @param {() => number} opts.getCellSize - текущий размер клетки поля в пикселях
- * @param {() => boolean} opts.isLocked - блокировка ввода (например, game over)
+ * @param {HTMLCanvasElement} opts.boardCanvas - board canvas (for coordinates and size)
+ * @param {HTMLCanvasElement} opts.dragCanvas - fixed-overlay canvas for the dragged shape
+ * @param {HTMLElement[]} opts.trayEls - tray slot canvases (data-index = shape index)
+ * @param {() => object} opts.getBoard - current Board
+ * @param {() => (object|null)[]} opts.getShapes - current tray shapes (with colors via getShapeColor)
+ * @param {(index:number) => string} opts.getShapeColor - shape color by tray index
+ * @param {() => number} opts.getCellSize - current board cell size in pixels
+ * @param {() => boolean} opts.isLocked - input lock (e.g. game over)
  * @param {(info: {highlight: {row:number, col:number, valid:boolean}[], comboCells: {row:number, col:number}[], color: string}) => void} opts.onHover -
- *   highlight — клетки под самой фигурой (зелёная/красная подсветка допустимости);
- *   comboCells — клетки, которые исчезнут, если поставить фигуру прямо сейчас
- *   (R05.3, пусто — комбо не будет); color — цвет перетаскиваемой фигуры для подсветки comboCells
+ *   highlight — cells under the shape itself (green/red validity overlay);
+ *   comboCells — cells that would disappear if the shape were placed right now
+ *   (R05.3, empty = no combo); color — dragged shape's color for the comboCells overlay
  * @param {() => void} opts.onHoverEnd
  * @param {(shapeIndex:number, row:number, col:number) => void} opts.onDrop
  * @param {(shapeIndex:number) => void} opts.onInvalidDrop
@@ -165,8 +164,8 @@ export function attachDragAndDrop({
     const bounds = dragging.bounds;
     const boardRect = boardCanvas.getBoundingClientRect();
 
-    // якорь фигуры — под точкой касания, приподнят и отцентрован по ширине,
-    // чтобы палец/курсор не закрывал клетку постановки и была видна вся фигура
+    // shape anchor — under the touch point, lifted and centered by width, so
+    // the finger/cursor doesn't cover the target cell and the whole shape is visible
     const x = event.clientX - boardRect.left;
     const y = event.clientY - boardRect.top;
     const anchorX = x - (bounds.width / 2) * cellSize;
@@ -180,10 +179,10 @@ export function attachDragAndDrop({
     dragging.valid = valid;
     const overBoard = overlapsBoard(row, col, bounds);
 
-    // фигура всегда свободно следует за курсором/пальцем — привязку к сетке
-    // видно только по подсветке клеток (onHover ниже) и в анимации при
-    // отпускании (landFloat); магнитный «прыжок» самой фигуры при переходе
-    // между клетками ощущался как рывок, поэтому её тут нет
+    // the shape always follows the cursor/finger freely — grid snapping is
+    // only visible via the cell highlight (onHover below) and the landing
+    // animation on release (landFloat); a magnetic "jump" of the shape itself
+    // when crossing cell boundaries felt jarring, so it's not done here
     dragging.target.x = event.clientX - (bounds.width / 2) * cellSize;
     dragging.target.y = event.clientY - (bounds.height / 2 + LIFT_CELLS) * cellSize;
 
@@ -196,8 +195,8 @@ export function attachDragAndDrop({
 
     floatCanvas.classList.toggle('drag-float--invalid', overBoard && !valid);
 
-    // превью комбо (R05.3): что исчезнет, если поставить фигуру прямо
-    // сейчас — считаем только на валидной позиции, реальное поле не трогаем
+    // combo preview (R05.3): what would disappear if the shape were placed
+    // right now — computed only for a valid position, doesn't touch the real board
     const comboCells = valid ? board.previewClear(dragging.shape, row, col).cells : [];
 
     onHover({
@@ -207,9 +206,9 @@ export function attachDragAndDrop({
     });
   }
 
-  // Единая точка сброса — гасит overlay-canvas и снимает приглушение слота
-  // лотка. Оба места, откуда завершается драг (landFloat/returnFloat), идут
-  // через неё, чтобы слот не мог случайно остаться навсегда приглушённым.
+  // Single reset point — hides the overlay canvas and clears the tray
+  // slot's dimmed state. Both places that end a drag (landFloat/returnFloat)
+  // go through it, so a slot can never accidentally stay dimmed forever.
   function resetFloat(el) {
     floatCanvas.classList.remove('drag-float--invalid');
     floatCanvas.style.display = 'none';
@@ -236,9 +235,9 @@ export function attachDragAndDrop({
     requestAnimationFrame(step);
   }
 
-  // Валидная позиция: фигура красиво «влетает» и встаёт вровень с клеткой
-  // поля, только после этого коммитим реальную постановку (onDrop) — без
-  // рывка между анимацией и отрисовкой уже размещённого блока на поле.
+  // Valid position: the shape smoothly "lands" and aligns with the board
+  // cell; only then do we commit the actual placement (onDrop) — no jump
+  // between the animation and rendering the already-placed block on the board.
   function landFloat(state) {
     const cellSize = getCellSize();
     const boardRect = boardCanvas.getBoundingClientRect();
@@ -254,9 +253,9 @@ export function attachDragAndDrop({
     });
   }
 
-  // Недопустимая позиция (или отмена драга): фигура плавно возвращается и
-  // уменьшается до размера своего слота в лотке, слот восстанавливает
-  // непрозрачность ровно к моменту, когда фигура «садится» на место.
+  // Invalid position (or cancelled drag): the shape smoothly returns and
+  // shrinks to its tray slot size; the slot regains full opacity exactly as
+  // the shape "settles" into place.
   function returnFloat(state) {
     const slotRect = state.el.getBoundingClientRect();
     const cellSize = getCellSize();
@@ -301,9 +300,9 @@ export function attachDragAndDrop({
       if (!shape) return;
       el.setPointerCapture(event.pointerId);
 
-      // защитный сброс: если предыдущая анимация возврата/посадки была
-      // прервана (например, приложение свернули в момент rAF) и класс
-      // остался висеть на каком-то слоте — новый драг не должен это длить
+      // defensive reset: if a previous return/land animation was interrupted
+      // (e.g. app was backgrounded mid-rAF) and the class got stuck on some
+      // slot, a new drag shouldn't carry that state forward
       trayEls.forEach((slot) => slot.classList.remove('tray-slot--dragging'));
 
       const cellSize = getCellSize();
@@ -347,5 +346,5 @@ export function attachDragAndDrop({
   });
 }
 
-// экспортируем на случай, если вызывающему коду нужен тот же расчёт размера клетки
+// exported in case the caller needs the same cell-size calculation
 export { computeCellSize };

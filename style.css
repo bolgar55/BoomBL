@@ -1,8 +1,8 @@
 /* style.css — BoomBL TMA
-   Палитра дословно из reference.md (R42). Тема по умолчанию — тёмная
-   (spec §Решения 9: вне Telegram/без сигнала темы используется тёмная).
-   Другой модуль (telegram-bridge) сможет переключать тему, выставляя
-   атрибут data-theme="light" на <html> — CSS уже готов к обеим темам. */
+   Palette copied verbatim from reference.md. Dark is the default theme
+   (outside Telegram / with no theme signal, dark is used). Another module
+   (telegram-bridge) can switch themes by setting data-theme="light" on
+   <html> — the CSS is already ready for both. */
 
 :root {
   --bg: #1A1A2E;
@@ -15,9 +15,9 @@
   --score-color: #FFD700;
   --score-outline: #7a5600;
   --danger: #FF4757;
-  /* Отступ под собственную шапку/хэндл Telegram (R05.11) — значение
-     выставляет app.js через telegramBridge.getContentSafeAreaTop(), 0 по
-     умолчанию (вне Telegram). См. #app ниже — max() с env() под вырез экрана. */
+  /* Padding for Telegram's own header/handle — the value is set by app.js
+     via telegramBridge.getContentSafeAreaTop(), 0 by default (outside
+     Telegram). See #app below — max() with env() for the device notch. */
   --tg-safe-area-top: 0px;
 }
 
@@ -43,7 +43,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  /* без горизонтального скролла на любой ширине от 320px (R18) */
+  /* no horizontal scroll at any width from 320px up */
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
 }
@@ -55,25 +55,26 @@ body {
   max-width: 520px;
   margin: 0 auto;
   padding: 12px;
-  /* Верхние кнопки шапки должны быть НИЖЕ выреза экрана и нативного UI
-     Telegram (R05.11) — иначе они визуально видны, но тач в этой полосе
-     перехватывает шапку/хэндл Telegram, а не WebView, и по кнопкам
-     промахиваешься. max() берёт больший из двух отступов: env() — вырез
-     самого устройства (действует и без JS), --tg-safe-area-top — то, что
-     реально занимает интерфейс Telegram поверх контента (app.js). */
+  /* The header buttons must sit BELOW the device notch and Telegram's own
+     native UI — otherwise they're visible but taps in that strip get
+     intercepted by Telegram's header/handle instead of the WebView, and you
+     miss the button. max() picks the larger of two insets: env() is the
+     device's own notch (works even without JS), --tg-safe-area-top is what
+     Telegram's own interface actually occupies over the content (set by
+     app.js). */
   padding-top: calc(12px + max(env(safe-area-inset-top, 0px), var(--tg-safe-area-top, 0px)));
   gap: 12px;
-  touch-action: none; /* весь драг обрабатываем сами через Pointer Events */
+  touch-action: none; /* we handle all dragging ourselves via Pointer Events */
 }
 
-/* ---------- Верхняя панель: очки + подсказка ---------- */
+/* ---------- Top bar: score + hint ---------- */
 
-/* Ряды шапки зафиксированы явно (flex-basis:100% у #top-actions ниже
-   принудительно переносит его на вторую строку) вместо того, чтобы полагаться
-   на flex-wrap подбирать перенос по ширине контента: иначе рост числа очков
-   (больше разрядов) или другие изменения текста могли неожиданно перекинуть
-   элементы в новую строку — шапка «съезжала» в случайный момент. Так расклад
-   всегда одинаковый: очки/рекорд сверху, кнопки снизу. */
+/* The header's rows are pinned explicitly (flex-basis:100% on #top-actions
+   below forces it onto a second line) instead of relying on flex-wrap to
+   wrap based on content width: otherwise a growing score (more digits) or
+   other text changes could unexpectedly push elements onto a new line and
+   the header would "jump" at a random moment. This way the layout is always
+   the same: score/record on top, buttons below. */
 #top-bar {
   display: flex;
   align-items: center;
@@ -101,14 +102,14 @@ body {
   font-size: 28px;
   font-weight: 800;
   line-height: 1;
-  /* цифры одинаковой ширины — рост числа очков не «гуляет» по ширине символов */
+  /* equal-width digits — a growing score doesn't jitter in character width */
   font-variant-numeric: tabular-nums;
 }
 
-/* position:absolute — комбо появляется/исчезает по ходу игры, но не должно
-   сдвигать соседние элементы шапки (кнопки, лучший результат): без этого
-   #top-bar (flex-wrap: wrap) мог переносить строку при каждом появлении
-   комбо, из-за чего вся шапка «съезжала». */
+/* position:absolute — the combo badge appears/disappears during play but
+   must not shift neighboring header elements (buttons, high score): without
+   this, #top-bar (flex-wrap: wrap) could wrap onto a new line every time the
+   combo appeared, making the whole header "jump". */
 #combo-value {
   position: absolute;
   top: 100%;
@@ -120,14 +121,14 @@ body {
   font-weight: 700;
 }
 
-/* ---------- Лучший результат (R12/R30) ---------- */
+/* ---------- High score ---------- */
 
 #high-score-panel {
   display: flex;
   align-items: baseline;
   gap: 6px;
   min-width: 0;
-  margin-left: auto; /* прижат к правому краю первой строки шапки */
+  margin-left: auto; /* pinned to the right edge of the header's first row */
   color: var(--text-muted);
   font-size: 13px;
 }
@@ -138,14 +139,14 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Действия шапки: подсказка, язык, звук ---------- */
+/* ---------- Header actions: leaderboard, achievements, language ---------- */
 
 #top-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  flex-basis: 100%; /* всегда своя строка — см. комментарий у #top-bar */
+  flex-basis: 100%; /* always its own row — see the #top-bar comment above */
 }
 
 #language-btn {
@@ -153,7 +154,7 @@ body {
   min-width: 44px;
 }
 
-/* ---------- Ежедневный челлендж (R14) ---------- */
+/* ---------- Daily challenge ---------- */
 
 #challenge-panel {
   display: flex;
@@ -175,9 +176,9 @@ body {
   font-weight: 700;
 }
 
-/* Активный временный ивент партии (game/events.js) занимает ту же панель —
-   выделяем её на время ивента заметным градиентом/свечением, чтобы отличалось
-   от обычного отображения ачивки/челленджа. */
+/* The current game's active temporary event (game/events.js) takes over
+   this same panel — highlighted with a noticeable gradient/glow while
+   active, to stand out from the normal achievement/challenge display. */
 @keyframes eventPanelGlow {
   0%, 100% { box-shadow: 0 0 0 0 rgba(165, 94, 234, 0.35); }
   50% { box-shadow: 0 0 14px 2px rgba(165, 94, 234, 0.55); }
@@ -192,8 +193,9 @@ body {
   font-weight: 700;
 }
 
-/* Лёгкий безадресный намёк за пару ходов до старта ивента — заметно мягче
-   самого ивента (медленнее и бледнее), чтобы не путаться с уже начавшимся. */
+/* A light, non-specific hint a couple of moves before an event starts —
+   noticeably softer than the event itself (slower, paler) so it's never
+   confused with one that's already active. */
 @keyframes eventHintFade {
   0%, 100% { opacity: 0.7; }
   50% { opacity: 1; }
@@ -220,15 +222,15 @@ button {
   color: #fff;
   background: linear-gradient(180deg, var(--ui-gradient-from), var(--ui-gradient-to));
   border-radius: 12px;
-  /* крупные тач-зоны (R17): не меньше 44×44px */
+  /* large touch targets: at least 44×44px */
   min-height: 44px;
   min-width: 44px;
   padding: 10px 16px;
   font-weight: 700;
   font-size: 14px;
-  /* Лёгкая «пружинка» на отжатии (transition работает в обе стороны: на
-     нажатии сжимается быстро, на отпускании чуть пружинит обратно за счёт
-     overshoot-кривой) — единая анимация нажатия для всех кнопок игры. */
+  /* A light "spring" on release (the transition works both ways: it
+     shrinks fast on press, springs back slightly on release thanks to the
+     overshoot curve) — one shared press animation for every button in the game. */
   transform: scale(1);
   transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1), filter 120ms ease;
 }
@@ -243,7 +245,7 @@ button:disabled {
   cursor: default;
 }
 
-/* ---------- Игровое поле ---------- */
+/* ---------- Game board ---------- */
 
 #board-wrap {
   position: relative;
@@ -262,9 +264,10 @@ button:disabled {
   display: block;
 }
 
-/* ---------- Всплывающий бонус (R19, бонус за заполнение пустот) ----------
-   Контейнер — обычный слой поверх поля (#board-wrap уже position:relative),
-   сами узлы .bonus-popup создаёт/удаляет ui/animations.js (playBonusPopup). */
+/* ---------- Popup bonus (gap-fill bonus, etc.) ----------
+   The container is a plain layer over the board (#board-wrap is already
+   position:relative); the .bonus-popup nodes themselves are created/removed
+   by ui/animations.js (playBonusPopup). */
 
 #bonus-layer {
   position: absolute;
@@ -326,11 +329,11 @@ button:disabled {
   pointer-events: none;
 }
 
-/* ---------- Плавающая перетаскиваемая фигура (R05) ----------
-   position:fixed — координаты в viewport, не обрезается overflow:hidden
-   у #board-wrap и рисуется поверх всего экрана (лоток, поле, шапка).
-   Размер и transform (позиция/scale) на каждый кадр драга выставляет
-   ui/input.js через canvas.style.transform — здесь только базовый вид. */
+/* ---------- Floating dragged shape ----------
+   position:fixed — coordinates are relative to the viewport, so it isn't
+   clipped by #board-wrap's overflow:hidden and draws over the whole screen
+   (tray, board, header). Size and transform (position/scale) are set every
+   drag frame by ui/input.js via canvas.style.transform — here just the base look. */
 
 .drag-float {
   position: fixed;
@@ -350,11 +353,11 @@ button:disabled {
   filter: drop-shadow(0 10px 18px rgba(255, 71, 87, 0.55)) saturate(0.5) brightness(0.8);
 }
 
-/* ---------- Лоток с 3 фигурами ---------- */
+/* ---------- Tray with 3 shapes ---------- */
 
 #tray {
   display: flex;
-  /* отступ между тач-зонами не меньше 8px (R17) */
+  /* at least 8px gap between touch targets */
   gap: 10px;
   justify-content: space-between;
 }
@@ -362,7 +365,7 @@ button:disabled {
 .tray-slot {
   flex: 1 1 0;
   aspect-ratio: 1 / 1;
-  /* не меньше 44×44px (R17) — на практике слот шире, но нижняя граница гарантирована */
+  /* at least 44×44px — in practice the slot is wider, but the lower bound is guaranteed */
   min-width: 44px;
   min-height: 44px;
   background: var(--cell-empty);
@@ -380,11 +383,11 @@ button:disabled {
   font-weight: 700;
 }
 
-/* ---------- Экран Game Over (R21/R27) ----------
-   DOM строит сам ui/gameover.js (createGameOverScreen), сюда монтируется
-   через container: #overlay-root — здесь только оформление того, что он
-   создаёт (.gameover-overlay > canvas.gameover-confetti + .gameover-card
-   с иконкой/счётом/бейджем рекорда/статистикой/кнопками). */
+/* ---------- Game Over screen ----------
+   DOM is built by ui/gameover.js itself (createGameOverScreen), mounted here
+   via container: #overlay-root — this is just the styling of what it
+   creates (.gameover-overlay > canvas.gameover-confetti + .gameover-card
+   with the icon/score/record badge/stats/buttons). */
 
 @keyframes goOverlayFadeIn {
   from { opacity: 0; }
@@ -567,9 +570,10 @@ button:disabled {
   border-color: rgba(0, 0, 0, 0.15);
 }
 
-/* ---------- Метка версии игры ----------
-   Едва заметная подпись в углу экрана — не мешает игре, но видна тем, кто
-   присылает баг-репорты (легко сослаться на конкретную версию). */
+/* ---------- Version tag ----------
+   A barely-visible label in the corner of the screen — doesn't get in the
+   way of the game, but is there for anyone filing a bug report (easy to
+   reference a specific version). */
 
 .version-tag {
   position: fixed;
@@ -585,7 +589,7 @@ button:disabled {
   z-index: 5;
 }
 
-/* ---------- Анимации (R19) ---------- */
+/* ---------- Animations ---------- */
 
 @keyframes appear {
   from {
@@ -626,7 +630,7 @@ button:disabled {
   animation: shake 400ms ease-in-out;
 }
 
-/* ---------- Кнопка достижений в шапке ---------- */
+/* ---------- Header leaderboard/achievements buttons ---------- */
 
 #leaderboard-btn,
 #achievements-btn {
@@ -636,9 +640,9 @@ button:disabled {
   line-height: 1;
 }
 
-/* ---------- Экран достижений (R05.7) ----------
-   DOM строит сам ui/achievements.js (createAchievementsScreen), сюда
-   монтируется через container: #overlay-root — здесь только оформление. */
+/* ---------- Achievements screen ----------
+   DOM is built by ui/achievements.js itself (createAchievementsScreen),
+   mounted here via container: #overlay-root — this is just the styling. */
 
 .achievements-overlay {
   position: fixed;
@@ -826,10 +830,10 @@ button:disabled {
   background: rgba(165, 94, 234, 0.18);
 }
 
-/* ---------- Лидерборд (глобальный, топ-20, всё время) ----------
-   Создаёт ui/leaderboard.js — тот же оверлей/панель/шапка, что и у экрана
-   достижений (.achievements-overlay/-panel/-header/-close переиспользуются
-   как есть), здесь только оформление строк списка. */
+/* ---------- Leaderboard (global, top-20, all-time) ----------
+   Built by ui/leaderboard.js — the same overlay/panel/header as the
+   achievements screen (.achievements-overlay/-panel/-header/-close are
+   reused as-is), only the row styling below is specific to it. */
 
 .leaderboard-row {
   display: flex;
@@ -881,9 +885,9 @@ button:disabled {
   font-size: 13px;
 }
 
-/* ---------- Уведомление о новом достижении (R05.7) ----------
-   Создаёт/удаляет ui/achievements.js (showAchievementUnlock). Появляется
-   снизу с ростом и лёгким подпрыгом, держится, затем уезжает и тает. */
+/* ---------- New-achievement toast ----------
+   Created/removed by ui/achievements.js (showAchievementUnlock). Grows in
+   from the bottom with a slight bounce, holds, then slides away and fades. */
 
 .achievement-toast {
   position: fixed;
@@ -924,18 +928,19 @@ button:disabled {
   }
 }
 
-/* Вариант тоста «сверху» (используется showEventToast для анонса ивента
-   партии, см. ui/achievements.js) — игрок отметил, что снизу тост мешает
-   перетаскивать фигуры из лотка; появляется над полем, поверх верхней
-   панели, и так же сам уезжает и тает через TOAST_LIFETIME_MS. */
+/* "Top" toast variant (used by showEventToast for the current-game event
+   announcement, see ui/achievements.js) — a bottom toast used to get in the
+   way of dragging shapes out of the tray, so this one appears over the
+   board, above the top panel, and fades/leaves the same way after
+   TOAST_LIFETIME_MS. */
 .achievement-toast--top {
   top: calc(8px + max(env(safe-area-inset-top, 0px), var(--tg-safe-area-top, 0px)));
   bottom: auto;
 }
 
-/* Закрытая позиция (до появления) — отдельно от --visible/--leaving, иначе
-   при равном приоритете правил чей transform "победит" зависело бы только от
-   порядка в файле, а не от реального состояния тоста. */
+/* Closed position (before appearing) — kept separate from
+   --visible/--leaving, otherwise which rule's transform "wins" at equal
+   specificity would depend only on file order, not the toast's real state. */
 .achievement-toast--top:not(.achievement-toast--visible):not(.achievement-toast--leaving) {
   transform: translate(-50%, -140%) scale(0.9);
 }
@@ -1009,7 +1014,7 @@ button:disabled {
   align-self: flex-start;
 }
 
-/* ---------- Адаптивность (R18): играбельно от 320px ---------- */
+/* ---------- Responsiveness: playable from 320px up ---------- */
 
 @media (max-width: 359px) {
   #app {

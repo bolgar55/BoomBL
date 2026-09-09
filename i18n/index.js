@@ -1,18 +1,18 @@
 // i18n/index.js
-// Словарь строк интерфейса и текущий язык (границы модуля `i18n` — interfaces.md).
-// Наружу торчат t/setLanguage/detectLanguage(+init) — структура словаря спрятана.
+// UI string dictionary and current language. Exposes t/setLanguage/
+// detectLanguage(+init) - the dictionary structure itself stays internal.
 //
-// Фабрика createI18n(deps) — как и game/persistence.js, — принимает
-// инжектируемые зависимости, чтобы detectLanguage() был тестируем без
-// реального window.Telegram/navigator (в Node их просто нет).
+// createI18n(deps) factory - like game/persistence.js - takes injectable
+// dependencies so detectLanguage() is testable without a real
+// window.Telegram/navigator (neither exists in Node).
 
-// Поддерживаемые языки (R44): русский и английский.
+// Supported languages: Russian and English.
 const SUPPORTED_LANGUAGES = ['ru', 'en'];
 const DEFAULT_LANGUAGE = 'ru';
 
-// Словарь строк интерфейса. Ключи для описаний шаблонов дневного челленджа
-// (`challenge.<id>`) соответствуют id из game/challenges.js и содержат
-// плейсхолдер {goal}, подставляемый через t(key, { goal }).
+// UI string dictionary. Daily-challenge template keys (`challenge.<id>`)
+// match ids from game/challenges.js and contain a {goal} placeholder
+// substituted via t(key, { goal }).
 const DICTIONARIES = {
   ru: {
     score: 'Очки',
@@ -294,15 +294,15 @@ const DICTIONARIES = {
   },
 };
 
-// Приводит код языка ('ru-RU', 'en-US', 'EN', ...) к поддерживаемому
-// двухбуквенному коду либо null, если язык не поддерживается словарём.
+// Normalizes a language code ('ru-RU', 'en-US', 'EN', ...) to a supported
+// two-letter code, or null if the dictionary doesn't support it.
 function normalizeLanguage(code) {
   if (!code || typeof code !== 'string') return null;
   const short = code.slice(0, 2).toLowerCase();
   return SUPPORTED_LANGUAGES.includes(short) ? short : null;
 }
 
-// Подставляет параметры вида {name} в строку словаря.
+// Substitutes {name}-style placeholders into a dictionary string.
 function interpolate(template, params) {
   if (!params) return template;
   return template.replace(/\{(\w+)\}/g, (match, name) =>
@@ -311,16 +311,18 @@ function interpolate(template, params) {
 }
 
 /**
- * Создаёт объект i18n с инжектируемыми зависимостями (нужно для тестов и для
- * работы вне браузера/Telegram, по аналогии с createPersistence).
+ * Creates an i18n object with injectable dependencies (needed for tests and
+ * for running outside a browser/Telegram, same pattern as createPersistence).
  * @param {{
  *   telegramLanguageCode?: string,
  *   navigatorLanguage?: string,
  *   persistence?: {getItem: Function, setItem: Function}
  * }} [deps]
- *   telegramLanguageCode — код языка Telegram-пользователя (Telegram.WebApp.initDataUnsafe.user.language_code);
- *   navigatorLanguage — код языка браузера (navigator.language);
- *   persistence — модуль persistence (game/persistence.js) для сохранения выбора языка между сессиями.
+ *   telegramLanguageCode - the Telegram user's language code
+ *   (Telegram.WebApp.initDataUnsafe.user.language_code);
+ *   navigatorLanguage - the browser's language code (navigator.language);
+ *   persistence - persistence module (game/persistence.js) for remembering
+ *   the chosen language across sessions.
  * @returns {{
  *   t: (key: string, params?: object) => string,
  *   setLanguage: (lang: 'ru'|'en') => Promise<void>,
@@ -341,9 +343,9 @@ export function createI18n(deps = {}) {
 
   let currentLanguage = DEFAULT_LANGUAGE;
 
-  // R44.1: язык Telegram-пользователя → иначе язык браузера → иначе ru.
-  // Чистая функция определения — не трогает persistence и не имеет побочных
-  // эффектов, поэтому детерминированно тестируется напрямую.
+  // Telegram user's language -> else browser language -> else ru. Pure
+  // detection function - doesn't touch persistence, no side effects, so
+  // it's deterministically testable directly.
   function detectLanguage() {
     return normalizeLanguage(telegramLanguageCode) ?? normalizeLanguage(navigatorLanguage) ?? DEFAULT_LANGUAGE;
   }
@@ -358,8 +360,8 @@ export function createI18n(deps = {}) {
     return interpolate(template, params);
   }
 
-  // Меняет язык мгновенно (t() сразу отдаёт новые строки) и асинхронно
-  // сохраняет выбор через persistence, если она передана.
+  // Switches language instantly (t() returns new strings right away) and
+  // saves the choice via persistence asynchronously, if provided.
   async function setLanguage(lang) {
     currentLanguage = SUPPORTED_LANGUAGES.includes(lang) ? lang : DEFAULT_LANGUAGE;
     if (persistence) {
@@ -367,10 +369,9 @@ export function createI18n(deps = {}) {
     }
   }
 
-  // Первичная загрузка языка при старте приложения: если язык уже выбирался
-  // раньше — берём его из persistence, иначе определяем автоматически и
-  // сразу сохраняем результат (чтобы следующий запуск не переопределял его
-  // заново, если игрок сменит язык устройства).
+  // Initial language load at app startup: if a language was already chosen
+  // before, use it from persistence; otherwise auto-detect and save the
+  // result right away (so a later device-language change doesn't override it).
   async function init() {
     let stored = null;
     if (persistence) {

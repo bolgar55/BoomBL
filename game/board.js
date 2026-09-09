@@ -1,21 +1,21 @@
 // game/board.js
-// Игровое поле 8×8: хранит состояние сетки, проверяет размещение фигур,
-// фиксирует ход и очищает полностью заполненные строки/столбцы.
-// Модуль не знает ни про DOM, ни про Telegram — чистая логика.
+// 8x8 game board: holds grid state, validates shape placement, commits a
+// move, and clears fully-filled rows/columns.
+// No DOM or Telegram knowledge here - pure logic only.
 
 const SIZE = 8;
 
 export class Board {
   constructor() {
-    // grid[row][col] === true — клетка занята. Внутреннее представление
-    // намеренно скрыто от остальных модулей — наружу торчат только методы ниже.
+    // grid[row][col] === true means the cell is occupied. Internal
+    // representation is intentionally hidden - only the methods below are exposed.
     this.grid = Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
   }
 
   /**
-   * Проверяет, помещается ли фигура на поле, если её опорная клетка (0,0)
-   * встаёт в позицию (row, col). Отклоняет позиции за границей поля и
-   * позиции, где хотя бы одна клетка фигуры уже занята.
+   * Checks whether a shape fits on the board with its anchor cell (0,0) at
+   * (row, col). Rejects out-of-bounds positions and positions where any
+   * shape cell is already occupied.
    * @param {{cells: number[][]}} shape
    * @param {number} row
    * @param {number} col
@@ -32,12 +32,12 @@ export class Board {
   }
 
   /**
-   * Фиксирует фигуру на поле и очищает полностью заполненные строки/столбцы.
-   * Все линии, заполненные этим ходом, очищаются как один результат хода
-   * (а не по одной), поэтому вызывающий код может корректно обработать
-   * синхронную анимацию и бонус за комбо-очистку.
-   * Вызывающий код обязан проверить canPlace заранее — при недопустимой
-   * позиции метод бросает исключение вместо тихой порчи состояния.
+   * Commits a shape to the board and clears fully-filled rows/columns.
+   * All lines cleared by this move are cleared as a single move result
+   * (not one at a time), so the caller can correctly handle synchronized
+   * animation and the combo-clear bonus.
+   * Caller must check canPlace beforehand - on an invalid position this
+   * method throws instead of silently corrupting state.
    * @param {{cells: number[][]}} shape
    * @param {number} row
    * @param {number} col
@@ -45,7 +45,7 @@ export class Board {
    */
   place(shape, row, col) {
     if (!this.canPlace(shape, row, col)) {
-      throw new Error('Недопустимое размещение фигуры');
+      throw new Error('Invalid shape placement');
     }
     for (const [dr, dc] of shape.cells) {
       this.grid[row + dr][col + dc] = true;
@@ -79,14 +79,13 @@ export class Board {
   }
 
   /**
-   * Не трогая реальное состояние поля, определяет, какие строки/столбцы
-   * были бы полностью заполнены и какие клетки исчезли бы, если поставить
-   * фигуру в (row, col) прямо сейчас. Используется превью комбо при
-   * перетаскивании (R05.3) — вызывающий код показывает подсветку по
-   * результату, ничего не размещая на самом деле; фиксирует ход, как и
-   * раньше, только place(). На недопустимой позиции возвращает пустой
-   * результат вместо ошибки (в отличие от place()) — это чисто
-   * информационный запрос, а не попытка хода.
+   * Without touching real board state, determines which rows/columns would
+   * be fully filled and which cells would disappear if the shape were
+   * placed at (row, col) right now. Used for the drag combo preview
+   * (R05.3) - caller shows highlighting from the result without actually
+   * placing anything; only place() still commits a move. On an invalid
+   * position returns an empty result instead of throwing (unlike place()) -
+   * this is a pure information query, not a move attempt.
    * @param {{cells: number[][]}} shape
    * @param {number} row
    * @param {number} col
@@ -148,10 +147,10 @@ export class Board {
   }
 
   /**
-   * Определяет, есть ли на поле хоть одна позиция для хоть одной из
-   * переданных фигур. Перебирает все 64 клетки для каждой фигуры (§3 спецификации).
-   * Делегирует hasAnyValidMove — та же проверка, что и R05.5, но как метод
-   * Board (оставлен ради обратной совместимости вызывающего кода).
+   * Checks whether the board has at least one valid position for any of
+   * the given shapes. Scans all 64 cells per shape (spec §3).
+   * Delegates to hasAnyValidMove - same check as R05.5, exposed as a Board
+   * method for caller backward compatibility.
    * @param {{cells: number[][]}[]} shapes
    * @returns {boolean}
    */
@@ -160,14 +159,14 @@ export class Board {
   }
 
   /**
-   * Заливка (4-связность) изолированной пустой области поля, содержащей
-   * клетки фигуры в позиции (row, col) — не трогает состояние поля, вызывать
-   * до place(). Используется бонусом за закрытие пробела: если размер этой
-   * области в точности равен числу клеток фигуры, значит фигура целиком
-   * закрыла изолированный пробел (а не просто легла в открытое место — тогда
-   * область захватила бы куда больше пустых клеток вокруг). Стартует с
-   * первой клетки самой фигуры — canPlace уже гарантирует, что она пуста;
-   * на недопустимой позиции возвращает пустой массив.
+   * Flood-fills (4-connectivity) the isolated empty region of the board
+   * containing the shape's cells at (row, col) - doesn't touch board state,
+   * call before place(). Used by the gap-closing bonus: if this region's
+   * size exactly equals the shape's cell count, the shape fully closed an
+   * isolated gap (rather than just landing in open space - in that case the
+   * region would capture far more empty cells around it). Starts from the
+   * shape's first cell - canPlace already guarantees it's empty; returns an
+   * empty array on an invalid position.
    * @param {{cells: number[][]}} shape
    * @param {number} row
    * @param {number} col
@@ -187,7 +186,7 @@ export class Board {
       const key = `${r},${c}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      if (this.grid[r][c]) continue; // занятая клетка — граница пробела
+      if (this.grid[r][c]) continue; // occupied cell = gap boundary
       pocket.push({ row: r, col: c });
       stack.push([r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]);
     }
@@ -195,18 +194,18 @@ export class Board {
     return pocket;
   }
 
-  /** Полностью ли пусто поле — используется бонусом за полную очистку. */
+  /** Whether the board is completely empty - used by the full-clear bonus. */
   isEmpty() {
     return this.grid.every((row) => row.every((cell) => !cell));
   }
 
   /**
-   * Все изолированные пустые области поля (4-связность), каждая — список
-   * своих клеток. В отличие от findEnclosedPocket (которая проверяет одну
-   * конкретную область относительно конкретной фигуры/позиции), сканирует
-   * ВСЁ поле и находит их все разом — используется «умной» генерацией
-   * (game/shapes.js), чтобы заметить дыру под конкретную фигуру, даже когда
-   * игрок ещё не начал драг ни одной фигуры в эту область.
+   * All isolated empty regions of the board (4-connectivity), each as a
+   * list of its cells. Unlike findEnclosedPocket (which checks one specific
+   * region against a specific shape/position), this scans the WHOLE board
+   * and finds all of them at once - used by the "smart" generation
+   * (game/shapes.js) to spot a hole matching a specific shape even before
+   * the player has dragged any shape near that region.
    * @returns {{row:number, col:number}[][]}
    */
   findAllEnclosedPockets() {
@@ -238,9 +237,9 @@ export class Board {
 export const BOARD_SIZE = SIZE;
 
 /**
- * Есть ли хотя бы одна допустимая позиция для фигуры на этом поле прямо
- * сейчас (R05.5) — используется «умной» генерацией лотка (game/shapes.js),
- * чтобы не выдавать фигуры, которые вообще некуда поставить.
+ * Whether there is at least one valid position for the shape on this board
+ * right now (R05.5) - used by the "smart" tray generation (game/shapes.js)
+ * to avoid handing out shapes that have nowhere to go.
  * @param {{cells: number[][]}} piece
  * @param {Board} board
  * @returns {boolean}
@@ -255,10 +254,10 @@ export function canPlacePiece(piece, board) {
 }
 
 /**
- * Все допустимые позиции фигуры на этом поле прямо сейчас (R05.5) —
- * перебирает все 64 клетки. Используется «умной» генерацией лотка, чтобы
- * оценить, насколько фигура «гибкая» (много позиций — безопасный выбор,
- * мало — рискованный) и создаёт ли хоть одна из позиций комбо-очистку.
+ * All valid positions for the shape on this board right now (R05.5) -
+ * scans all 64 cells. Used by "smart" tray generation to gauge how
+ * "flexible" a shape is (many positions = safe pick, few = risky) and
+ * whether any of its positions would trigger a combo clear.
  * @param {{cells: number[][]}} piece
  * @param {Board} board
  * @returns {{row:number, col:number}[]}
@@ -274,9 +273,9 @@ export function findValidPlacements(piece, board) {
 }
 
 /**
- * Есть ли среди доступных фигур лотка хоть одна, которую ещё можно
- * поставить (R05.5/R21) — если нет ни одной, партия закончена (Game Over).
- * Пустые слоты лотка (null — фигура уже поставлена) пропускаются.
+ * Whether any of the tray's available shapes can still be placed
+ * (R05.5/R21) - if none can, the game is over (Game Over). Empty tray
+ * slots (null = shape already placed) are skipped.
  * @param {Board} board
  * @param {({cells: number[][]}|null)[]} availablePieces
  * @returns {boolean}

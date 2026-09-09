@@ -1,15 +1,15 @@
 // api/create-invoice.js
-// Серверлесс-функция Vercel: POST /api/create-invoice {amountStars} -> {invoiceUrl}
-// (граница `api/create-invoice` — interfaces.md, spec §Решения 8, R43).
-// Токен бота нужен для createInvoiceLink и не может попасть в клиентский код —
-// поэтому вызов делается здесь, на сервере, из TELEGRAM_BOT_TOKEN.
+// Vercel serverless function: POST /api/create-invoice {amountStars} -> {invoiceUrl}
+// (boundary `api/create-invoice` — interfaces.md, spec §Decisions 8, R43).
+// The bot token is needed for createInvoiceLink and must never reach client
+// code — so the call is made here, server-side, from TELEGRAM_BOT_TOKEN.
 
-// HTTP-клиент инжектируется (deps.fetchImpl), чтобы тесты не делали реальных
-// сетевых вызовов к Telegram (см. contract исполнителя).
+// HTTP client is injected (deps.fetchImpl) so tests don't make real network
+// calls to Telegram (see the implementer's contract).
 
 /**
- * Создаёт обработчик с инжектируемыми зависимостями — для тестов (мок fetch)
- * и для реальной работы (fetch к Bot API, токен из окружения).
+ * Creates the handler with injectable dependencies — for tests (mock fetch)
+ * and for production use (fetch to the Bot API, token from env).
  * @param {{token?: string, fetchImpl?: Function}} [deps]
  */
 export function createInvoiceHandler(deps = {}) {
@@ -35,7 +35,7 @@ export function createInvoiceHandler(deps = {}) {
     }
 
     if (!token) {
-      // Нет токена в окружении — сервер не настроен, а не ошибка игрока (R43.1).
+      // No token in env — server misconfiguration, not a player error (R43.1).
       sendJson(res, 500, { error: 'server_misconfigured' });
       return;
     }
@@ -47,8 +47,8 @@ export function createInvoiceHandler(deps = {}) {
         body: JSON.stringify({
           title: 'Поддержать разработчика',
           description: 'Донат автору игры BoomBL через Telegram Stars',
-          // payload — произвольная строка для сверки на стороне бота, платёж
-          // разовый и нигде не сохраняется (spec §Решения 8/12).
+          // payload — arbitrary string for the bot side to cross-check; the
+          // payment is one-off and never stored anywhere (spec §Decisions 8/12).
           payload: `donate_${amountStars}_${Date.now()}`,
           currency: 'XTR',
           prices: [{ label: 'Донат', amount: amountStars }],
@@ -63,11 +63,11 @@ export function createInvoiceHandler(deps = {}) {
 
       sendJson(res, 200, { invoiceUrl: data.result });
     } catch {
-      // Сбой сети/Bot API — мягкая ошибка (R43.1), без падения игры.
+      // Network/Bot API failure — soft error (R43.1), doesn't crash the game.
       sendJson(res, 502, { error: 'invoice_failed' });
     }
   };
 }
 
-// Экспорт по умолчанию — точка входа для Vercel (боевые зависимости).
+// Default export — Vercel entry point (production dependencies).
 export default createInvoiceHandler();

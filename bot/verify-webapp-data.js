@@ -1,24 +1,24 @@
 // bot/verify-webapp-data.js
-// Проверка подлинности Telegram.WebApp.initData (алгоритм Telegram:
+// Verifies the authenticity of Telegram.WebApp.initData (Telegram's algorithm:
 // https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app).
-// Обязательна для любого API, принимающего данные от игрока с доверием к
-// присланному user.id — без проверки подписи кто угодно мог бы прислать
-// чужой Telegram-профиль и записать результат от чужого имени в лидерборд
-// (api/leaderboard.js). Токен бота никогда не покидает сервер (как и в
-// bot/bot-logic.js) — только сюда, для проверки подписи.
+// Required for any API that trusts a player-submitted user.id — without
+// signature verification, anyone could send someone else's Telegram profile
+// and post a score under their name on the leaderboard (api/leaderboard.js).
+// The bot token never leaves the server (same as in bot/bot-logic.js) — it's
+// only used here, for verifying the signature.
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-// Старый initData не принимаем — защита от replay (кто-то мог случайно или
-// намеренно переслать когда-то davно перехваченную строку initData).
+// Reject stale initData — replay protection (someone could accidentally or
+// deliberately resend a long-ago-intercepted initData string).
 const MAX_AUTH_AGE_SECONDS = 24 * 60 * 60;
 
 /**
- * Проверяет initData и возвращает разобранные данные пользователя, либо null
- * при любой ошибке проверки (нет hash, неверная подпись, слишком старый
- * auth_date, отсутствующий/битый user) — вызывающий код не должен различать
- * причину отказа, просто отклонять запрос как неавторизованный.
- * @param {string} initData - сырая строка Telegram.WebApp.initData
+ * Verifies initData and returns the parsed user data, or null on any
+ * verification failure (missing hash, bad signature, auth_date too old,
+ * missing/malformed user) — callers should not distinguish the reason,
+ * just treat the request as unauthorized.
+ * @param {string} initData - raw Telegram.WebApp.initData string
  * @param {string} botToken
  * @returns {{ user: { id: number, username?: string, first_name?: string, last_name?: string } } | null}
  */

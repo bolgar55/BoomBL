@@ -1,23 +1,21 @@
 // ui/animations.js
-// Анимации интерфейса (R19): появление фигур, разнообразные эффекты
-// удаления блоков/линий/комбо, импульс успешного размещения, тряска и
-// вспышка при неудачной попытке, всплывающий бонус за закрытие пробела и
-// анимированный счётчик очков, полная очистка поля, превью потенциального
-// комбо при перетаскивании фигуры (R05.3).
-// Работает поверх DOM-элементов/Canvas, переданных вызывающим кодом —
-// не хранит состояние партии. Визуальный слой, не покрывается юнит-тестами
-// (см. interfaces.md, «Швы для тестов»).
+// UI animations (R19): shape appearance, various block/line/combo clear
+// effects, a pulse on successful placement, shake+flash on failed placement,
+// a popup bonus for filling a gap, an animated score counter, a full-board
+// clear celebration, and a combo preview while dragging a shape (R05.3).
+// Works on top of DOM elements/Canvas passed in by the caller — stateless.
+// Visual layer, not covered by unit tests (see interfaces.md, "Test seams").
 //
-// Несколько эффектов на одном effects-канвасе могут идти одновременно
-// (например: импульс размещения + взрыв линии + фейерверк полной очистки),
-// поэтому каждый из них — не отдельный self-driven rAF-цикл со своим
-// clearRect (это стирало бы соседние эффекты), а «слой» с чистой функцией
-// draw(now, ctx) → жив ли ещё, который добавляется в общий movок
-// createEffectsEngine — он один чистит канвас и вызывает все активные слои
-// за кадр. Эффекты не блокируют игровую логику: все триггеры — fire-and-forget,
-// вызывающий код (app.js) не ждёт их завершения перед следующим ходом.
+// Several effects can run at once on the same effects canvas (e.g. a
+// placement pulse + a line explosion + a full-clear firework), so each one
+// isn't its own self-driven rAF loop with its own clearRect (that would wipe
+// out neighboring effects) — instead it's a "layer" with a pure
+// draw(now, ctx) -> still alive? function added to the shared engine
+// createEffectsEngine, which alone clears the canvas and runs all active
+// layers per frame. Effects never block game logic: all triggers are
+// fire-and-forget — the caller (app.js) doesn't wait for them before the next move.
 
-import { drawComboPreview } from './render.js?v=0.5.0';
+import { drawComboPreview } from './render.js?v=0.5.1';
 
 const APPEAR_CLASS = 'anim-appear';
 const SHAKE_CLASS = 'anim-shake';
@@ -38,24 +36,23 @@ function drawRotatedFragment(ctx, x, y, size, rotation, color, alpha) {
 }
 
 /**
- * Анимация появления новых фигур в лотке (R19): лёгкий каскад — слоты
- * появляются не одновременно, а друг за другом (небольшая задержка на
- * индекс), это и есть отдельная анимация «появление следующей фигуры».
- * Перезапускает CSS-анимацию даже если класс уже был навешан раньше
- * (форсированный reflow).
+ * Appear animation for new tray shapes (R19): a light cascade — slots appear
+ * one after another rather than all at once (small per-index delay), which
+ * is itself the "next shape appears" animation. Restarts the CSS animation
+ * even if the class was already applied before (forced reflow).
  * @param {HTMLElement[]} elements
  */
 export function playAppear(elements) {
   elements.forEach((el, i) => {
     el.classList.remove(APPEAR_CLASS);
     el.style.animationDelay = `${i * 60}ms`;
-    void el.offsetWidth; // форсируем reflow, чтобы анимацию можно было перезапустить
+    void el.offsetWidth; // force reflow so the animation can restart
     el.classList.add(APPEAR_CLASS);
   });
 }
 
 /**
- * Тряска элемента при неудачной попытке поставить фигуру (R05.2/R19).
+ * Shake an element on a failed attempt to place a shape (R05.2/R19).
  * @param {HTMLElement} el
  */
 export function playShake(el) {
@@ -66,12 +63,12 @@ export function playShake(el) {
 }
 
 /**
- * Движок нескольких одновременных canvas-эффектов на одном контексте (R19):
- * каждый слой — { draw(now, ctx): boolean } — рисует себя и сообщает, жив ли
- * ещё; движок один раз в кадр чистит канвас и прогоняет все активные слои,
- * не мешая друг другу. Стартует/останавливает свой rAF сам — простаивает,
- * когда активных слоёв нет.
- * @param {CanvasRenderingContext2D} ctx - effects-канвас поверх поля
+ * Engine for several simultaneous canvas effects on one context (R19): each
+ * layer — { draw(now, ctx): boolean } — draws itself and reports whether
+ * it's still alive; the engine clears the canvas once per frame and runs all
+ * active layers without them interfering with each other. Starts/stops its
+ * own rAF — idles when there are no active layers.
+ * @param {CanvasRenderingContext2D} ctx - effects canvas overlaid on the board
  * @returns {{add(layer: {draw:(now:number, ctx:CanvasRenderingContext2D) => boolean}): void}}
  */
 export function createEffectsEngine(ctx) {
@@ -100,15 +97,14 @@ const PARTICLE_LIFE_MS = 620;
 const RING_MS = 520;
 
 /**
- * Слой взрыва очищенных линий (R07/R19) — не выглядит одинаково каждый раз:
- * клетки гаснут «волной» по порядку (последовательное исчезновение), от
- * центра расходится кольцо (волновой эффект), разлетаются вращающиеся
- * прямоугольные осколки (particle-like + небольшой rotation) с мягким
- * свечением (shadowBlur). Интенсивность растёт с числом одновременно
- * очищенных линий и серией комбо — это и есть отдельные, визуально более
- * мощные анимации «нескольких линий одновременно» и «большого комбо»:
- * больше осколков, вторая (золотая/оранжевая) волна, розовый оттенок вспышки.
- * @param {{row:number, col:number, color:string}[]} cells - очищенные клетки с их цветом
+ * Layer for the cleared-lines explosion (R07/R19) — not identical every
+ * time: cells fade out in a sequential "wave", a ring expands outward from
+ * the center, and rotating rectangular fragments (particle-like, slight
+ * rotation) fly off with a soft glow (shadowBlur). Intensity scales with the
+ * number of lines cleared at once and the combo streak — this is what makes
+ * "multiple lines at once" and "big combo" visually more powerful: more
+ * fragments, a second gold/orange wave, a pink-tinted flash.
+ * @param {{row:number, col:number, color:string}[]} cells - cleared cells with their color
  * @param {number} cellSize
  * @param {{comboStreak?: number, linesCleared?: number}} [meta]
  * @returns {{draw(now:number, ctx:CanvasRenderingContext2D): boolean}}
@@ -180,7 +176,7 @@ export function createLineClearLayer(cells, cellSize, meta = {}) {
         if (life <= 0) continue;
         const t = pElapsed / 1000;
         const x = p.x + p.vx * t;
-        const y = p.y + p.vy * t + 0.5 * 340 * t * t; // лёгкая гравитация
+        const y = p.y + p.vy * t + 0.5 * 340 * t * t; // slight gravity
         drawRotatedFragment(ctx, x, y, p.size, p.rotation + p.rotationSpeed * t, p.color, life);
       }
 
@@ -208,11 +204,11 @@ export function createLineClearLayer(cells, cellSize, meta = {}) {
 const PLACEMENT_PULSE_MS = 260;
 
 /**
- * Слой лёгкого импульса при успешной установке фигуры без очистки линий
- * (R19, «установка фигуры» / «успешное размещение») — по кольцу на каждой
- * клетке фигуры, расширяется и гаснет. Тактильная обратная связь на каждый
- * обычный ход, отдельная от более мощного взрыва при очистке линий.
- * @param {{row:number, col:number}[]} cells - клетки, куда легла фигура
+ * Layer for a light pulse on successful placement without a line clear
+ * (R19, "shape placed" / "successful placement") — a ring on each cell of
+ * the shape, expanding and fading. Tactile feedback for every normal move,
+ * separate from the bigger explosion on a line clear.
+ * @param {{row:number, col:number}[]} cells - cells the shape landed on
  * @param {number} cellSize
  * @param {string} color
  * @returns {{draw(now:number, ctx:CanvasRenderingContext2D): boolean}}
@@ -221,11 +217,11 @@ export function createPlacementPulseLayer(cells, cellSize, color) {
   const start = performance.now();
   return {
     draw(now, ctx) {
-      // now может прийти чуть раньше start на самом первом кадре после
-      // add() (таймстамп rAF — момент начала кадра, а не вызова JS) — без
-      // нижней границы t уходил в минус, easeOutCubic(t<0) — тоже в минус,
-      // и radius мог стать отрицательным: ctx.arc() с отрицательным
-      // радиусом бросает исключение в Chrome.
+      // now can arrive slightly before start on the very first frame after
+      // add() (the rAF timestamp is the frame's start time, not the JS call
+      // time) — without the lower bound, t went negative, easeOutCubic(t<0)
+      // went negative too, and radius could end up negative: ctx.arc() with
+      // a negative radius throws in Chrome.
       const t = Math.max(0, (now - start) / PLACEMENT_PULSE_MS);
       if (t >= 1) return false;
       const eased = easeOutCubic(t);
@@ -250,9 +246,9 @@ export function createPlacementPulseLayer(cells, cellSize, color) {
 const INVALID_PULSE_MS = 320;
 
 /**
- * Слой краткой красной вспышки по всему полю при недопустимой попытке
- * размещения (R05.2/R19) — идёт вместе с playShake, отдельная от неё
- * анимация (flash, а не движение).
+ * Layer for a brief red flash over the whole board on an invalid placement
+ * attempt (R05.2/R19) — runs alongside playShake, a separate animation
+ * (flash, not movement).
  * @param {number} cellSize
  * @param {number} boardSize
  * @returns {{draw(now:number, ctx:CanvasRenderingContext2D): boolean}}
@@ -278,10 +274,10 @@ const FULL_CLEAR_MS = 900;
 const FULL_CLEAR_CONFETTI_COLORS = ['#FFD700', '#FF6B9D', '#1E90FF', '#2ED573', '#A55EEA', '#FFA502'];
 
 /**
- * Слой большого праздничного эффекта при полной очистке поля (R19,
- * «очистка всего поля») — самая мощная реакция в игре: вспышка на весь
- * канвас, расходящееся золотое кольцо от центра до краёв и конфетти,
- * падающее по всей ширине поля.
+ * Layer for the big celebration effect on a full-board clear (R19, "clear
+ * the whole board") — the game's most powerful reaction: a full-canvas
+ * flash, a gold ring expanding from center to edges, and confetti falling
+ * across the whole board width.
  * @param {number} cellSize
  * @param {number} boardSize
  * @returns {{draw(now:number, ctx:CanvasRenderingContext2D): boolean}}
@@ -310,8 +306,8 @@ export function createFullClearBurstLayer(cellSize, boardSize) {
 
   return {
     draw(now, ctx) {
-      // Math.max(0, ...) — см. комментарий в createPlacementPulseLayer: на
-      // самом первом кадре now может прийти чуть раньше start.
+      // Math.max(0, ...) — see the comment in createPlacementPulseLayer: on
+      // the very first frame, now can arrive slightly before start.
       const elapsed = Math.max(0, now - start);
       if (elapsed >= FULL_CLEAR_MS) return false;
 
@@ -354,11 +350,11 @@ export function createFullClearBurstLayer(cellSize, boardSize) {
 }
 
 /**
- * Анимированный счёт очков (R19): текст плавно «докручивается» от старого
- * значения к новому, а не меняется мгновенно. Токен на самом элементе
- * защищает от гонки, если следующий ход стартует новую анимацию раньше, чем
- * долетела предыдущая — старый rAF-цикл сам замечает, что его сменили, и
- * останавливается.
+ * Animated score counter (R19): the text smoothly "counts up" from the old
+ * value to the new one instead of changing instantly. A token on the
+ * element itself guards against a race if the next move starts a new
+ * animation before the previous one finished — the old rAF loop notices
+ * it's been superseded and stops itself.
  * @param {HTMLElement} el
  * @param {number} from
  * @param {number} to
@@ -373,7 +369,7 @@ export function animateScoreCountUp(el, from, to, duration = 500) {
   el.__scoreAnimToken = token;
   const start = performance.now();
   function frame(now) {
-    if (el.__scoreAnimToken !== token) return; // подменили новым вызовом
+    if (el.__scoreAnimToken !== token) return; // superseded by a newer call
     const t = Math.min(1, (now - start) / duration);
     el.textContent = String(Math.round(from + (to - from) * easeOutCubic(t)));
     if (t < 1) requestAnimationFrame(frame);
@@ -382,12 +378,12 @@ export function animateScoreCountUp(el, from, to, duration = 500) {
 }
 
 /**
- * Всплывающий «+N» над местом бонуса (R19, «бонус за заполнение пустот») —
- * не статичный текст: плавно увеличивается, слегка подпрыгивает, держится и
- * растворяется, уплывая вверх — анимация целиком в CSS (@keyframes bonusPop
- * в style.css), здесь только создание/позиционирование/самоудаление DOM-узла.
- * @param {HTMLElement} container - позиционируемый контейнер (например, слой над полем)
- * @param {{x:number, y:number, text:string, big?:boolean}} opts - x/y в CSS-пикселях контейнера
+ * Popup "+N" above the bonus spot (R19, "bonus for filling gaps") — not
+ * static text: smoothly grows, bounces slightly, holds, then fades while
+ * floating up — the animation is entirely in CSS (@keyframes bonusPop in
+ * style.css), this just creates/positions/self-removes the DOM node.
+ * @param {HTMLElement} container - positioned container (e.g. a layer over the board)
+ * @param {{x:number, y:number, text:string, big?:boolean}} opts - x/y in the container's CSS pixels
  */
 export function playBonusPopup(container, { x, y, text, big = false, color = null }) {
   const el = document.createElement('div');
@@ -395,9 +391,9 @@ export function playBonusPopup(container, { x, y, text, big = false, color = nul
   el.textContent = text;
   el.style.left = `${x}px`;
   el.style.top = `${y}px`;
-  // color — необязательная подсветка под конкретный повод (например, бонус
-  // за полное удаление цвета с поля тонируется в тот самый цвет, а не
-  // стандартным золотым) — переопределяет цвет текста и его свечение.
+  // color — optional tint for a specific occasion (e.g. the bonus for fully
+  // clearing a color from the board is tinted that color instead of the
+  // default gold) — overrides the text color and its glow.
   if (color) {
     el.style.color = color;
     el.style.textShadow = `0 2px 6px rgba(0, 0, 0, 0.55), 0 0 14px ${color}`;
@@ -407,14 +403,14 @@ export function playBonusPopup(container, { x, y, text, big = false, color = nul
 }
 
 /**
- * Конфетти на экране Game Over — независимый rAF-цикл на своём канвасе (не
- * через createEffectsEngine: живёт поверх целого экрана, а не только поля, и
- * запускается ровно один раз при показе экрана, а не многократно, как
- * игровые эффекты). Канвас растягивается под текущий размер своего
- * контейнера (overlay во весь экран) с поправкой на devicePixelRatio.
+ * Confetti on the Game Over screen — an independent rAF loop on its own
+ * canvas (not via createEffectsEngine: it covers the whole screen, not just
+ * the board, and starts exactly once when the screen shows, unlike game
+ * effects which fire repeatedly). The canvas is sized to its container's
+ * current size (full-screen overlay), adjusted for devicePixelRatio.
  * @param {HTMLCanvasElement} canvas
  * @param {{count?: number, durationMs?: number}} [opts]
- * @returns {() => void} остановка — отменяет rAF и чистит канвас
+ * @returns {() => void} stop function — cancels the rAF and clears the canvas
  */
 export function playGameOverConfetti(canvas, { count = 70, durationMs = 2600 } = {}) {
   const ctx = canvas.getContext('2d');
@@ -470,19 +466,18 @@ export function playGameOverConfetti(canvas, { count = 70, durationMs = 2600 } =
   };
 }
 
-// Скорость «дыхания» подсветки превью — рад/сек синусоиды (~2с на цикл).
+// "Breathing" speed of the preview highlight — sine wave rad/sec (~2s per cycle).
 const COMBO_PREVIEW_BREATH_SPEED = 3.2;
 
 /**
- * Превью потенциального комбо при перетаскивании фигуры (R05.3): пока
- * ui/input.js на каждое движение курсора зовёт update() с клетками, которые
- * исчезли бы после установки (пусто — превью не показываем), здесь крутится
- * независимый rAF-цикл «дыхания» (пульс по синусоиде), который их рисует
- * поверх поля через drawComboPreview. Цикл сам стартует при первых клетках
- * и сам останавливается, когда клеток не стало — не крутится вхолостую,
- * когда превью нечего показывать. stop() — жёсткая остановка при завершении
- * драга (в т.ч. вместе с очисткой канваса).
- * @param {CanvasRenderingContext2D} ctx - effects-канвас поверх поля
+ * Combo preview while dragging a shape (R05.3): ui/input.js calls update()
+ * on every cursor move with the cells that would disappear on placement
+ * (empty = don't show the preview); this runs its own "breathing" rAF loop
+ * (sine-wave pulse) that draws them over the board via drawComboPreview. The
+ * loop starts itself when cells first appear and stops itself when they're
+ * gone — it doesn't spin idly when there's nothing to preview. stop() is a
+ * hard stop when the drag ends (also clears the canvas).
+ * @param {CanvasRenderingContext2D} ctx - effects canvas overlaid on the board
  * @returns {{update(cells:{row:number,col:number}[], color:string, cellSize:number):void, stop():void}}
  */
 export function createComboPreview(ctx) {

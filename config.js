@@ -1,25 +1,24 @@
 // config.js
-// Простой конфиг-модуль без сборщика (тикет 07, критерий: GAME_URL и
-// STARS_AMOUNTS должны реально читаться из окружения, а не быть константой
-// в коде). В браузере переменных окружения не существует — process.env
-// доступен только на сервере (Vercel serverless, см. api/config.js). Поэтому
-// клиент запрашивает свой собственный serverless-эндпоинт /api/config,
-// который читает process.env.GAME_URL / process.env.STARS_AMOUNTS и отдаёт
-// их в виде JSON.
+// Simple config module, no bundler (ticket 07, criterion: GAME_URL and
+// STARS_AMOUNTS must actually be read from the environment, not hardcoded
+// constants). The browser has no environment variables — process.env only
+// exists server-side (Vercel serverless, see api/config.js). So the client
+// calls its own serverless endpoint /api/config, which reads
+// process.env.GAME_URL / process.env.STARS_AMOUNTS and returns them as JSON.
 //
-// Если эндпоинт недоступен (например, статика поднята локально через
-// `python -m http.server` без бэкенда, или сеть недоступна) — используется
-// безопасный фолбэк: пустой gameUrl (telegram-bridge сам подставит свой
-// нефункциональный плейсхолдер) и пустой список номиналов доната (кнопка
-// доната в этом случае скрывается — см. app.js).
+// If the endpoint is unreachable (e.g. static files served locally via
+// `python -m http.server` with no backend, or no network) — a safe fallback
+// is used: empty gameUrl (telegram-bridge substitutes its own non-functional
+// placeholder) and an empty list of donation amounts (the donate button is
+// hidden in that case — see app.js).
 
-// Кэшируем результат — конфиг не меняется в рамках одной сессии страницы,
-// повторные вызовы loadConfig() не должны бить по сети заново.
+// Cache the result — config doesn't change within a single page session, so
+// repeated loadConfig() calls shouldn't hit the network again.
 let cached = null;
 
 /**
- * Загружает публичную конфигурацию приложения (GAME_URL, STARS_AMOUNTS)
- * с сервера. Инжектируемый fetchImpl — для тестов, по умолчанию window.fetch.
+ * Loads the app's public config (GAME_URL, STARS_AMOUNTS) from the server.
+ * Injectable fetchImpl — for tests, defaults to window.fetch.
  * @param {Function} [fetchImpl]
  * @returns {Promise<{gameUrl: string|null, starsAmounts: number[]}>}
  */
@@ -28,22 +27,22 @@ export async function loadConfig(fetchImpl = globalThis.fetch) {
 
   try {
     const response = await fetchImpl('/api/config');
-    if (!response.ok) throw new Error('config: не-2xx ответ');
+    if (!response.ok) throw new Error('config: non-2xx response');
     const data = await response.json();
     cached = {
       gameUrl: typeof data.gameUrl === 'string' && data.gameUrl ? data.gameUrl : null,
       starsAmounts: Array.isArray(data.starsAmounts) ? data.starsAmounts.filter((n) => Number.isFinite(n) && n > 0) : [],
     };
   } catch {
-    // Нет бэкенда рядом со статикой или сбой сети — игра не должна падать,
-    // просто используются нефункциональные значения по умолчанию.
+    // No backend next to the static files, or a network failure — the game
+    // must not crash, just falls back to non-functional defaults.
     cached = { gameUrl: null, starsAmounts: [] };
   }
 
   return cached;
 }
 
-/** Сбрасывает кэш — нужно только тестам, чтобы проверять оба сценария подряд. */
+/** Resets the cache — only needed by tests, to check both scenarios in a row. */
 export function resetConfigCacheForTests() {
   cached = null;
 }

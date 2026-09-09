@@ -1,15 +1,15 @@
 // ui/leaderboard.js
-// Экран глобального лидерборда (топ-20, всё время) — полноэкранный оверлей,
-// та же структура/стили, что и у ui/achievements.js (.achievements-overlay/
-// -panel/-header/-close, только список — свой, .leaderboard-*). Модуль сам
-// строит DOM в container при первом show(), как и остальные оверлеи.
-// Не хранит счёт/состояние партии — только запрашивает список через
-// fetchLeaderboard (app.js передаёт функцию похода на api/leaderboard.js) и
-// рисует то, что пришло; ошибку сети показывает как обычный текст в списке,
-// не роняя экран (spec §Решения 9, R46i).
+// Global leaderboard screen (top 20, all-time) — a full-screen overlay,
+// same structure/styles as ui/achievements.js (.achievements-overlay/
+// -panel/-header/-close, only the list itself is custom, .leaderboard-*).
+// The module builds its own DOM in container on first show(), like the
+// other overlays. Stateless — just requests the list via fetchLeaderboard
+// (app.js supplies the function that calls api/leaderboard.js) and renders
+// whatever comes back; a network error shows as plain text in the list
+// instead of crashing the screen (spec §Decisions 9, R46i).
 
 /**
- * Создаёт контроллер экрана лидерборда.
+ * Creates the leaderboard screen controller.
  * @param {{
  *   container: HTMLElement,
  *   i18n: { t: (key:string, params?:object) => string },

@@ -1,26 +1,28 @@
 // telegram/bridge.js
-// Обёртка над Telegram.WebApp (границы модуля `telegram-bridge` — interfaces.md).
-// Вне Telegram (window.Telegram?.WebApp отсутствует) все методы — безопасные
-// no-op: игра не падает и не пишет ошибок в консоль игроку (R46i, spec §Решения 9).
+// Wrapper around Telegram.WebApp (module boundary `telegram-bridge` — interfaces.md).
+// Outside Telegram (window.Telegram?.WebApp missing) every method is a safe
+// no-op: the game doesn't crash or log errors to the player's console (R46i,
+// spec §Decisions 9).
 
-// Схема темы вне Telegram — тёмная по умолчанию (spec §Решения 9). Палитра
-// внутри режима своя (§Решения 5/6) — отсюда наружу идёт только режим.
+// Color scheme outside Telegram — dark by default (spec §Decisions 9). The
+// palette within a mode is its own concern (§Decisions 5/6) — only the mode
+// itself is exposed from here.
 const DEFAULT_COLOR_SCHEME = 'dark';
 
-// Плейсхолдер ссылки на игру для "Поделиться результатом" (§Решения 7).
-// GAME_URL — открытое место спецификации («Открытые места»): реальный адрес
-// появится только после деплоя и регистрации бота. Намеренно НЕ похож на
-// настоящую ссылку (в отличие от правдоподобного https://t.me/...), чтобы
-// его нельзя было принять за рабочий адрес и забыть заменить при деплое —
-// таск хостинга/бота обязан передать настоящий через deps.gameUrl.
+// Placeholder game link for "Share result" (§Decisions 7).
+// GAME_URL is an open spec item ("Open items"): the real address only exists
+// after deploy and bot registration. Deliberately NOT shaped like a real link
+// (unlike a plausible https://t.me/...), so it can't be mistaken for a
+// working address and forgotten at deploy time — the hosting/bot task must
+// pass the real one via deps.gameUrl.
 const DEFAULT_GAME_URL = '@MeBoombl_BOT';
 
-// Семантические типы вибро-отклика (R28) → конкретные вызовы HapticFeedback.
-// impactOccurred — физическое столкновение (постановка/взрыв линии),
-// notificationOccurred — результат действия (ошибка размещения),
-// selectionChanged — лёгкий тик при наведении на новую валидную позицию во
-// время драга (часто, на каждую новую клетку — impact/notification для этого
-// слишком «тяжёлые» и быстро утомили бы при частом срабатывании).
+// Semantic haptic feedback types (R28) → concrete HapticFeedback calls.
+// impactOccurred — a physical collision (placing a piece/clearing a line),
+// notificationOccurred — the outcome of an action (invalid placement),
+// selectionChanged — a light tick when hovering a new valid position while
+// dragging (fires often, on every new cell — impact/notification would feel
+// too "heavy" for that and get tiring fast).
 const HAPTIC_ACTIONS = {
   placement: (haptics) => haptics.impactOccurred?.('light'),
   lineClear: (haptics) => haptics.impactOccurred?.('heavy'),
@@ -29,17 +31,18 @@ const HAPTIC_ACTIONS = {
 };
 
 /**
- * Создаёт мост к Telegram.WebApp с инжектируемой зависимостью — нужно и для
- * тестов (мок Telegram.WebApp), и для явной работы без Telegram.
- * @param {{telegram?: object}} [deps] telegram — объект вида Telegram.WebApp
- *   (может отсутствовать вне Telegram — тогда все методы становятся no-op).
+ * Creates the bridge to Telegram.WebApp with an injectable dependency —
+ * needed both for tests (mock Telegram.WebApp) and to explicitly run
+ * without Telegram.
+ * @param {{telegram?: object}} [deps] telegram — object shaped like Telegram.WebApp
+ *   (may be absent outside Telegram — then every method becomes a no-op).
  */
 export function createTelegramBridge(deps = {}) {
   const telegram =
     deps.telegram ?? globalThis.window?.Telegram?.WebApp ?? globalThis.Telegram?.WebApp ?? null;
   const gameUrl = deps.gameUrl ?? DEFAULT_GAME_URL;
 
-  // Подписчики на смену темы Telegram (R22.1) — уведомляются без перезагрузки.
+  // Subscribers to Telegram theme changes (R22.1) — notified without a reload.
   const themeListeners = new Set();
 
   function getColorScheme() {
@@ -54,25 +57,25 @@ export function createTelegramBridge(deps = {}) {
         for (const listener of themeListeners) listener(scheme);
       });
     } catch {
-      // Сбой подписки на событие Telegram не должен ронять игру.
+      // A failed Telegram event subscription must not crash the game.
     }
   }
 
-  /** Инициализация: ready() + expand() при старте внутри Telegram (R24/R25). */
+  /** Init: ready() + expand() on startup inside Telegram (R24/R25). */
   function init() {
     if (!telegram) return;
     try {
       telegram.ready?.();
       telegram.expand?.();
     } catch {
-      // Безопасный no-op при сбое SDK — игра не должна падать (R46i).
+      // Safe no-op on SDK failure — the game must not crash (R46i).
     }
   }
 
   /**
-   * Подписка на смену темы Telegram во время сессии (R22.1).
+   * Subscribes to Telegram theme changes during the session (R22.1).
    * @param {(scheme: 'dark'|'light') => void} callback
-   * @returns {() => void} функция отписки
+   * @returns {() => void} unsubscribe function
    */
   function onThemeChange(callback) {
     themeListeners.add(callback);
@@ -80,16 +83,16 @@ export function createTelegramBridge(deps = {}) {
   }
 
   /**
-   * Отступ сверху, который занимает собственный интерфейс Telegram (шапка
-   * мини-аппа с хэндлом сворачивания/крестиком закрытия) поверх контента
-   * (R05.11) — если игру не сдвинуть под него, верхние кнопки визуально
-   * видны, но тач в этой полосе перехватывает нативный UI Telegram, а не
-   * WebView, и по кнопкам «промахиваешься». contentSafeAreaInset (новые
-   * версии Telegram.WebApp) уже учитывает и вырез устройства, и саму шапку
-   * Telegram — предпочтительнее; safeAreaInset — только вырез устройства
-   * (более старые версии), тоже сойдёт как фолбэк. Вне Telegram или без этих
-   * полей в SDK — 0, отступ под вырез экрана всё равно берёт на себя чистый
-   * CSS env(safe-area-inset-top) в style.css.
+   * Top inset taken up by Telegram's own mini-app chrome (header with the
+   * collapse handle/close cross) over the content (R05.11) — if the game
+   * isn't shifted below it, top buttons are visually visible but touches in
+   * that strip are intercepted by Telegram's native UI rather than the
+   * WebView, so taps on those buttons miss. contentSafeAreaInset (newer
+   * Telegram.WebApp versions) already accounts for both the device notch and
+   * Telegram's own header — preferred; safeAreaInset covers only the device
+   * notch (older versions), still fine as a fallback. Outside Telegram or
+   * without these SDK fields — 0; the screen notch inset is still handled by
+   * plain CSS env(safe-area-inset-top) in style.css regardless.
    * @returns {number}
    */
   function getContentSafeAreaTop() {
@@ -98,10 +101,10 @@ export function createTelegramBridge(deps = {}) {
   }
 
   /**
-   * Подписка на изменение отступа (поворот экрана, версия Telegram меняет
-   * своё UI и т.п.) — callback получает актуальный getContentSafeAreaTop().
+   * Subscribes to inset changes (screen rotation, a Telegram version
+   * changing its UI, etc.) — callback receives the current getContentSafeAreaTop().
    * @param {(top: number) => void} callback
-   * @returns {() => void} функция отписки
+   * @returns {() => void} unsubscribe function
    */
   function onSafeAreaChange(callback) {
     if (!telegram?.onEvent) return () => {};
@@ -110,7 +113,7 @@ export function createTelegramBridge(deps = {}) {
       telegram.onEvent('safeAreaChanged', handler);
       telegram.onEvent('contentSafeAreaChanged', handler);
     } catch {
-      // Сбой подписки не должен ронять игру — просто не будет живого обновления.
+      // A failed subscription must not crash the game — just no live updates.
     }
     return () => {
       try {
@@ -123,9 +126,9 @@ export function createTelegramBridge(deps = {}) {
   }
 
   /**
-   * Вибро-отклик (R28). type — один из 'placement' | 'lineClear' |
+   * Haptic feedback (R28). type is one of 'placement' | 'lineClear' |
    * 'invalidPlacement' | 'hoverValid'.
-   * Неизвестный type и отсутствие Telegram/HapticFeedback — безопасный no-op.
+   * Unknown type or missing Telegram/HapticFeedback — safe no-op.
    */
   function haptic(type) {
     const haptics = telegram?.HapticFeedback;
@@ -133,16 +136,16 @@ export function createTelegramBridge(deps = {}) {
     try {
       HAPTIC_ACTIONS[type]?.(haptics);
     } catch {
-      // Вибро-отклик не критичен для игры — сбой не должен её ронять.
+      // Haptic feedback isn't critical to the game — a failure must not crash it.
     }
   }
 
-  // Текущий обработчик клика MainButton — чтобы не копить дубликаты подписок
-  // при повторных showMainButton() (Telegram.WebApp.MainButton.onClick иначе
-  // добавляет новый колбэк поверх старого).
+  // Current MainButton click handler — so repeated showMainButton() calls
+  // don't stack duplicate subscriptions (Telegram.WebApp.MainButton.onClick
+  // otherwise adds a new callback on top of the old one).
   let currentMainButtonHandler = null;
 
-  /** Показывает MainButton Telegram с текстом и обработчиком клика (R27). */
+  /** Shows Telegram's MainButton with text and a click handler (R27). */
   function showMainButton(text, onClick) {
     const mainButton = telegram?.MainButton;
     if (!mainButton) return;
@@ -155,11 +158,11 @@ export function createTelegramBridge(deps = {}) {
       mainButton.onClick?.(onClick);
       mainButton.show?.();
     } catch {
-      // Безопасный no-op — экран не должен падать из-за сбоя MainButton.
+      // Safe no-op — the screen must not crash on a MainButton failure.
     }
   }
 
-  /** Скрывает MainButton Telegram. */
+  /** Hides Telegram's MainButton. */
   function hideMainButton() {
     try {
       telegram?.MainButton?.hide?.();
@@ -169,9 +172,9 @@ export function createTelegramBridge(deps = {}) {
   }
 
   /**
-   * Открывает окно оплаты Telegram Stars (R43, §Решения 8).
-   * Вне Telegram или при сбое SDK резолвится как 'failed' — вызывающий код
-   * (донат) сам решает, как мягко сообщить об этом игроку (R43.1).
+   * Opens the Telegram Stars payment window (R43, §Decisions 8).
+   * Outside Telegram or on SDK failure, resolves as 'failed' — the caller
+   * (donation flow) decides how to gracefully report that to the player (R43.1).
    * @param {string} url
    * @returns {Promise<'paid'|'cancelled'|'failed'|'pending'>}
    */
@@ -189,7 +192,7 @@ export function createTelegramBridge(deps = {}) {
     });
   }
 
-  /** «Поделиться результатом» через нативный способ Telegram (§Решения 7). */
+  /** "Share result" via Telegram's native share (§Decisions 7). */
   function shareResult(text) {
     if (!telegram?.openTelegramLink) return;
     try {
@@ -201,12 +204,12 @@ export function createTelegramBridge(deps = {}) {
   }
 
   /**
-   * Сырая строка Telegram.WebApp.initData — подписанные данные текущего
-   * игрока (см. bot/verify-webapp-data.js), нужна только для отправки
-   * результата в лидерборд (api/leaderboard.js): сервер сам проверяет
-   * подпись, здесь это просто прозрачная передача строки как есть. Вне
-   * Telegram (initData отсутствует) — пустая строка, вызывающий код (API
-   * лидерборда) тогда просто не отправляет счёт.
+   * Raw Telegram.WebApp.initData string — the current player's signed data
+   * (see bot/verify-webapp-data.js), needed only to submit a score to the
+   * leaderboard (api/leaderboard.js): the server verifies the signature
+   * itself, this is just a transparent passthrough of the string as-is.
+   * Outside Telegram (initData absent) — empty string, the caller (the
+   * leaderboard API) then simply doesn't submit a score.
    * @returns {string}
    */
   function getInitData() {
@@ -214,12 +217,12 @@ export function createTelegramBridge(deps = {}) {
   }
 
   /**
-   * Telegram id текущего игрока — только для UI (подсветить свою строку в
-   * списке лидерборда), НЕ для авторизации: initDataUnsafe, как следует из
-   * названия, не проверен подписью и не должен использоваться нигде, где
-   * важна доверенность значения (для этого есть getInitData() выше, которую
-   * сервер сам проверяет). Строкой — id из лидерборда тоже строка (ключ
-   * Redis-хэша), сравнивать через ===.
+   * Current player's Telegram id — for UI only (highlighting their own row
+   * in the leaderboard list), NOT for authorization: initDataUnsafe, as the
+   * name implies, is not signature-verified and must never be used anywhere
+   * trust matters (that's what getInitData() above is for, which the server
+   * verifies itself). Returned as a string — leaderboard ids are strings too
+   * (Redis hash key), compare with ===.
    * @returns {string|null}
    */
   function getMyUserId() {

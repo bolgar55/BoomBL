@@ -1,32 +1,32 @@
 // bot/bot-logic.js
-// Разбор апдейтов Telegram-бота (граница модуля `bot-logic` — interfaces.md,
-// spec §Решения 8/11, R33/R35/R39/R43). Сам модуль не хранит состояние —
-// каждый апдейт обрабатывается независимо, платёж разовый (spec §12/§8).
+// Telegram bot update parsing (module boundary `bot-logic` — interfaces.md,
+// spec §Decisions 8/11, R33/R35/R39/R43). The module itself is stateless —
+// each update is handled independently, the donation is one-off (spec §12/§8).
 //
-// Токен бота НИКОГДА не пишется в код — только имя переменной окружения
-// TELEGRAM_BOT_TOKEN (interfaces.md, .env.example). HTTP-клиент инжектируется
-// (deps.fetchImpl), чтобы тесты не делали реальных сетевых вызовов к Telegram.
+// The bot token is NEVER hardcoded — only the env var name
+// TELEGRAM_BOT_TOKEN (interfaces.md, .env.example). The HTTP client is
+// injected (deps.fetchImpl) so tests don't make real network calls to Telegram.
 
-// GAME_URL — открытое место спецификации (см. spec «Открытые места»,
-// telegram/bridge.js). Плейсхолдер намеренно не похож на настоящий адрес,
-// чтобы его нельзя было принять за рабочий и забыть заменить при деплое —
-// таск хостинга/бота (07) обязан передать настоящий через deps.gameUrl.
+// GAME_URL — an open spec item (see spec "Open items", telegram/bridge.js).
+// The placeholder is deliberately unlike a real address so it can't be
+// mistaken for a working one and forgotten at deploy time — the hosting/bot
+// task (07) must pass the real one via deps.gameUrl.
 const DEFAULT_GAME_URL = '@MeBoombl_BOT';
 
 /**
- * Создаёт обработчик апдейтов бота с инжектируемыми зависимостями — нужно
- * для тестов (мок HTTP-клиента) и для реальной работы (fetch к Bot API).
+ * Creates the bot update handler with injectable dependencies — needed for
+ * tests (mock HTTP client) and for production use (fetch to the Bot API).
  * @param {{token?: string, gameUrl?: string, fetchImpl?: Function}} [deps]
- *   token — токен бота (по умолчанию из process.env.TELEGRAM_BOT_TOKEN);
- *   gameUrl — адрес игры для кнопки WebApp;
- *   fetchImpl — функция вида fetch(url, options) -> Promise<Response>.
+ *   token — bot token (defaults to process.env.TELEGRAM_BOT_TOKEN);
+ *   gameUrl — game address for the WebApp button;
+ *   fetchImpl — function shaped like fetch(url, options) -> Promise<Response>.
  */
 export function createBotLogic(deps = {}) {
   const token = deps.token ?? process.env.TELEGRAM_BOT_TOKEN ?? '';
   const gameUrl = deps.gameUrl ?? DEFAULT_GAME_URL;
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
 
-  /** Вызов метода Telegram Bot API напрямую через fetch, без сторонних пакетов. */
+  /** Calls a Telegram Bot API method directly via fetch, no third-party packages. */
   function callApi(method, params) {
     return fetchImpl(`https://api.telegram.org/bot${token}/${method}`, {
       method: 'POST',
@@ -35,7 +35,7 @@ export function createBotLogic(deps = {}) {
     });
   }
 
-  /** Ответ на /start: inline-кнопка WebApp, открывающая игру (R33/R39). */
+  /** Reply to /start: inline WebApp button that opens the game (R33/R39). */
   function handleStart(message) {
     return callApi('sendMessage', {
       chat_id: message.chat.id,
@@ -46,7 +46,7 @@ export function createBotLogic(deps = {}) {
     });
   }
 
-  /** Подтверждение pre_checkout_query — обязательный шаг перед оплатой Stars. */
+  /** Confirms pre_checkout_query — required step before a Stars payment. */
   function handlePreCheckout(preCheckoutQuery) {
     return callApi('answerPreCheckoutQuery', {
       pre_checkout_query_id: preCheckoutQuery.id,
@@ -55,8 +55,9 @@ export function createBotLogic(deps = {}) {
   }
 
   /**
-   * Успешный платёж (R43): ничего не сохраняется — донат разовый, лидерборда
-   * нет (spec §Решения 8/12). Отправляем короткую благодарность игроку.
+   * Successful payment (R43): nothing is stored — the donation is one-off,
+   * there's no leaderboard for it (spec §Decisions 8/12). Sends the player a
+   * short thank-you.
    */
   function handleSuccessfulPayment(message) {
     return callApi('sendMessage', {
@@ -66,8 +67,8 @@ export function createBotLogic(deps = {}) {
   }
 
   /**
-   * Разбирает один апдейт Telegram и реагирует на него (interfaces.md:
-   * `bot-logic.handleUpdate(update)`). Неизвестные типы апдейтов — no-op.
+   * Parses one Telegram update and reacts to it (interfaces.md:
+   * `bot-logic.handleUpdate(update)`). Unknown update types are a no-op.
    */
   async function handleUpdate(update) {
     if (update?.pre_checkout_query) {
@@ -82,7 +83,7 @@ export function createBotLogic(deps = {}) {
       await handleStart(update.message);
       return;
     }
-    // Прочие апдейты вне зоны этого таска — тихо игнорируются.
+    // Other update types are out of scope for this task — silently ignored.
   }
 
   return { handleUpdate };

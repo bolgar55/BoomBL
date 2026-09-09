@@ -1,17 +1,17 @@
 // ui/gameover.js
-// Экран Game Over: итоговый счёт (с анимированной докруткой), бейдж нового
-// рекорда, мини-статистика партии (линий очищено / лучшее комбо), конфетти,
-// кнопки «Играть снова» (дублирует telegramBridge.showMainButton — видна
-// только на этом экране — своей кнопкой в самой карточке, чтобы работать
-// и вне Telegram) и «Поделиться результатом» (через telegramBridge.shareResult).
-// DOM экрана модуль создаёт сам при первом show() и добавляет в container.
+// Game Over screen: final score (with animated count-up), new-record badge,
+// mini match stats (lines cleared / best combo), confetti, a "Play again"
+// button (duplicates telegramBridge.showMainButton — visible only on this
+// screen — with its own in-card button so it also works outside Telegram)
+// and "Share result" (via telegramBridge.shareResult).
+// The module builds its own DOM on first show() and appends it to container.
 
-import { animateScoreCountUp, playGameOverConfetti } from './animations.js?v=0.5.0';
+import { animateScoreCountUp, playGameOverConfetti } from './animations.js?v=0.5.1';
 
 const HIGH_SCORE_KEY = 'highScore';
 
 /**
- * Определяет, побит ли рекорд (чистая логика, без DOM).
+ * Whether the high score was beaten (pure logic, no DOM).
  * @param {number} score
  * @param {number} previousHighScore
  * @returns {boolean}
@@ -21,7 +21,7 @@ export function isNewHighScore(score, previousHighScore) {
 }
 
 /**
- * Итоговое состояние экрана Game Over — чистая функция, тестируется без DOM.
+ * Final state for the Game Over screen — pure function, tested without DOM.
  * @param {number} score
  * @param {number} previousHighScore
  * @returns {{score: number, highScore: number, isNewHighScore: boolean}}
@@ -36,7 +36,7 @@ export function computeGameOverState(score, previousHighScore) {
 }
 
 /**
- * Создаёт контроллер экрана Game Over.
+ * Creates the Game Over screen controller.
  * @param {{
  *   telegramBridge: {showMainButton: Function, hideMainButton: Function, shareResult: Function},
  *   persistence: {getItem: Function, setItem: Function},
@@ -176,9 +176,9 @@ export function createGameOverScreen(deps) {
   }
 
   /**
-   * Показывает экран Game Over: читает и при необходимости обновляет
-   * сохранённый рекорд, выводит счёт (с докруткой) и мини-статистику
-   * партии, запускает конфетти, включает MainButton «Играть снова».
+   * Shows the Game Over screen: reads and, if needed, updates the saved
+   * high score, displays the score (with count-up) and mini match stats,
+   * starts confetti, and enables the "Play again" MainButton.
    * @param {number} score
    * @param {{linesCleared?: number, bestCombo?: number}} [stats]
    * @returns {Promise<{score:number, highScore:number, isNewHighScore:boolean}>}
@@ -188,12 +188,13 @@ export function createGameOverScreen(deps) {
     const state = computeGameOverState(score, previousHighScore);
     lastState = state;
 
-    // Не ждём запись нового рекорда перед показом экрана — раньше именно
-    // этот await вешал весь Game Over (реальный баг: набрал рекорд, экран
-    // не появлялся, игра «подвисала» — CloudStorage Telegram у части
-    // клиентов вообще не вызывает колбэк, см. game/persistence.js). Экран
-    // показываем сразу, сохранение продолжается в фоне; сама persistence.js
-    // теперь ещё и подстрахована таймаутом с откатом на localStorage.
+    // Don't await saving the new high score before showing the screen —
+    // this exact await used to hang the whole Game Over screen (real bug:
+    // beat the record, screen never appeared, game froze — on some clients
+    // Telegram's CloudStorage never calls its callback at all, see
+    // game/persistence.js). Show the screen immediately; the save continues
+    // in the background. persistence.js itself is now also backed by a
+    // timeout that falls back to localStorage.
     if (state.isNewHighScore) {
       persistence.setItem(HIGH_SCORE_KEY, state.highScore);
     }
@@ -234,7 +235,7 @@ export function createGameOverScreen(deps) {
     return state;
   }
 
-  /** Скрывает экран и MainButton — виден только на экране Game Over (R27). */
+  /** Hides the screen and the MainButton — visible only on the Game Over screen (R27). */
   function hide() {
     if (overlay) overlay.hidden = true;
     stopConfetti?.();

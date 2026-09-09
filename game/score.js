@@ -1,53 +1,53 @@
 // game/score.js
-// Подсчёт очков за ход и серия комбо.
+// Move scoring and combo streak.
 //
-// 1) Очки за постановку: +1 очко за каждый занятый кубик, начисляются сразу
-//    при касании поля — независимо от того, очистилась линия или нет, и без
-//    какого-либо множителя (комбо на них не влияет).
-// 2) Очки за очистку линий (без комбо) — не линейно, а по треугольному числу:
-//    10×N×(N+1)/2, где N — сколько линий очищено ЭТИМ ходом. 1 линия = 10,
-//    2 линии = 30 (не 20), 3 линии = 60 (не 30), 4 линии = 100 — каждая
-//    следующая одновременная линия добавляет на 10 очков больше предыдущей
-//    прибавки (10, +20, +30, +40, ...), это и даёт прогрессирующий бонус за
-//    множественную очистку одним ходом.
-// 3) Комбо-множитель: очки за линии этого хода (п.2) умножаются на текущий
-//    номер серии комбо целиком (не на 1+0.1×серия, а прямо ×N) — серия
-//    считает подряд идущие ходы, очистившие хоть одну линию; этот ход, если
-//    он очищает линию, сам входит в серию ДО того, как множитель применяется
-//    (первая очистка серии — уже ×1, а не ×0). Очки за кубики (п.1) множитель
-//    не трогает.
+// 1) Placement points: +1 point per occupied cell, awarded immediately when
+//    the shape touches the board - regardless of whether a line clears, and
+//    with no multiplier (combo doesn't affect these).
+// 2) Line-clear points (before combo) - not linear, a triangular number:
+//    10*N*(N+1)/2, where N = lines cleared THIS move. 1 line = 10,
+//    2 lines = 30 (not 20), 3 lines = 60 (not 30), 4 lines = 100 - each
+//    additional simultaneous line adds 10 more than the previous increment
+//    (10, +20, +30, +40, ...), giving a progressive bonus for clearing
+//    multiple lines in one move.
+// 3) Combo multiplier: this move's line points (item 2) are multiplied by
+//    the current combo streak count directly (not 1+0.1*streak, just xN) -
+//    the streak counts consecutive moves that cleared at least one line;
+//    if this move clears a line, it joins the streak BEFORE the multiplier
+//    is applied (the streak's first clear is already x1, not x0). The
+//    multiplier never touches placement points (item 1).
 //
-// Серия комбо (R05.6): ход без очистки сам по себе её не обнуляет — она
-// держится, пока игрок успевает очищать хотя бы раз в MAX_MISSES ходов
-// подряд (сейчас 3: «каждый третий поставленный блок должен удалить хотя бы
-// одну линию»). Считаем подряд идущие ходы БЕЗ очистки, пока идёт серия;
-// как только их набирается MAX_MISSES — серия обнуляется прямо на этом ходе.
-// Чисто счётчик ходов, без времени — модуль не знает про часы/таймеры.
+// Combo streak (R05.6): a move with no clear doesn't reset it by itself -
+// it holds as long as the player clears at least once every MAX_MISSES
+// consecutive moves (currently 3: "every third placed block must clear at
+// least one line"). We count consecutive no-clear moves while the streak is
+// active; once they reach MAX_MISSES, the streak resets on that same move.
+// Pure move counter, no time involved - module knows nothing about clocks/timers.
 
 const MAX_MISSES = 3;
 const LINE_POINTS_PER_STEP = 10;
 
-/** Треугольное число: 10×(1+2+...+N) — прогрессия очков за N линий одним ходом. */
+/** Triangular number: 10*(1+2+...+N) - progressive points for N lines in one move. */
 function lineClearBasePoints(linesCleared) {
   return (LINE_POINTS_PER_STEP * linesCleared * (linesCleared + 1)) / 2;
 }
 
 export class Score {
   constructor() {
-    // Длина текущей серии ходов, очистивших хотя бы одну линию. Формула
-    // начисления и правило обрыва серии — детали модуля, наружу торчит
-    // только addMove/reset.
+    // Length of the current streak of moves that cleared at least one line.
+    // The scoring formula and streak-break rule are module internals - only
+    // addMove/reset are exposed.
     this.comboStreak = 0;
-    // Сколько ходов подряд без очистки прошло с последней очистки внутри
-    // текущей серии — считается, только пока comboStreak > 0.
+    // How many consecutive no-clear moves have passed since the last clear
+    // within the current streak - only counted while comboStreak > 0.
     this.missesSinceClear = 0;
   }
 
   /**
-   * Начисляет очки за один ход. Серия комбо растёт при очистке линии(й) и
-   * сбрасывает счётчик промахов; ход без очистки во время активной серии
-   * увеличивает счётчик промахов, а при MAX_MISSES промахах подряд обрывает
-   * серию тут же, на этом ходе.
+   * Awards points for one move. The combo streak grows on a line clear and
+   * resets the miss counter; a move with no clear during an active streak
+   * increments the miss counter, and MAX_MISSES consecutive misses breaks
+   * the streak right on that move.
    * @param {{cellsPlaced: number, linesCleared: number}} move
    * @returns {{points: number, comboStreak: number}}
    */
@@ -71,7 +71,7 @@ export class Score {
     return { points, comboStreak: this.comboStreak };
   }
 
-  /** Сбрасывает серию комбо (используется при старте новой партии). */
+  /** Resets the combo streak (used when a new game starts). */
   reset() {
     this.comboStreak = 0;
     this.missesSinceClear = 0;

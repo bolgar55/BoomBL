@@ -1,15 +1,14 @@
 // ui/render.js
-// Отрисовка игрового поля и фигур на Canvas 2D. Модуль не хранит состояние
-// партии — только рисует то, что ему передали через параметры, и содержит
-// чистую геометрию (перевод пикселей в клетки поля и обратно), которую
-// переиспользует ui/input.js при перетаскивании.
+// Renders the game board and shapes on Canvas 2D. Stateless — only draws
+// what it's given via parameters, and holds the pure geometry (pixel <->
+// cell conversion) reused by ui/input.js for drag-and-drop.
 //
-// Палитра — дословно из reference.md (§5 спецификации), единственный
-// источник цвета для игры (Telegram даёт только сигнал тёмная/светлая тема,
-// см. spec §Решения 6 — переключение темы делает вызывающий код через атрибут
-// data-theme на <html>, этот модуль лишь читает переданное имя темы).
+// Palette is copied verbatim from reference.md (spec §5), the single source
+// of color for the game (Telegram only signals dark/light theme, see spec
+// §Decisions 6 — the caller switches themes via the data-theme attribute on
+// <html>; this module just reads the theme name it's given).
 
-import { BOARD_SIZE } from '../game/board.js?v=0.5.0';
+import { BOARD_SIZE } from '../game/board.js?v=0.5.1';
 
 export const THEME = {
   dark: {
@@ -22,34 +21,34 @@ export const THEME = {
   },
 };
 
-// Яркие цвета блоков — случайный цвет назначается фигуре при спавне (reference.md).
+// Bright block colors — a shape gets a random one assigned on spawn (reference.md).
 export const BLOCK_COLORS = [
-  '#FF4757', // красный
-  '#FFA502', // оранжевый
-  '#FFD32A', // жёлтый
-  '#2ED573', // зелёный
-  '#1E90FF', // голубой
-  '#A55EEA', // фиолетовый
-  '#FF6B9D', // розовый/малиновый
-  '#00D2D3', // бирюзовый
+  '#FF4757', // red
+  '#FFA502', // orange
+  '#FFD32A', // yellow
+  '#2ED573', // green
+  '#1E90FF', // blue
+  '#A55EEA', // purple
+  '#FF6B9D', // pink/crimson
+  '#00D2D3', // turquoise
 ];
 
 export const LINE_CLEAR_FLASH_COLOR = '#FFFFFF';
 
-/** Случайный цвет блока из палитры — используется при спавне новой фигуры. */
+/** Random block color from the palette — used when a new shape spawns. */
 export function randomBlockColor() {
   return BLOCK_COLORS[Math.floor(Math.random() * BLOCK_COLORS.length)];
 }
 
-const GAP = 3; // визуальный зазор между клетками в пикселях, на логику не влияет
-const RADIUS = 4; // скругление углов блоков
+const GAP = 3; // visual gap between cells in pixels, doesn't affect logic
+const RADIUS = 4; // block corner radius
 
-/** Считает размер одной клетки, чтобы сетка BOARD_SIZE×BOARD_SIZE влезла в квадрат canvasSize. */
+/** Computes the cell size so a BOARD_SIZE×BOARD_SIZE grid fits the square canvasSize. */
 export function computeCellSize(canvasSize, boardSize = BOARD_SIZE) {
   return canvasSize / boardSize;
 }
 
-/** Пиксельный прямоугольник клетки (row, col) с учётом зазора между клетками. */
+/** Pixel rect for cell (row, col), accounting for the gap between cells. */
 export function cellRect(row, col, cellSize) {
   return {
     x: col * cellSize + GAP / 2,
@@ -59,9 +58,9 @@ export function cellRect(row, col, cellSize) {
 }
 
 /**
- * Переводит пиксельные координаты (относительно канваса поля) в координаты
- * клетки. Может вернуть индекс вне границ поля (отрицательный или >= BOARD_SIZE) —
- * вызывающий код (isValidDrop) сам решает, валидна ли позиция.
+ * Converts pixel coordinates (relative to the board canvas) into cell
+ * coordinates. May return an out-of-bounds index (negative or >= BOARD_SIZE) —
+ * the caller (isValidDrop) decides whether the position is valid.
  */
 export function pixelToCell(x, y, cellSize) {
   return {
@@ -70,11 +69,11 @@ export function pixelToCell(x, y, cellSize) {
   };
 }
 
-// Единичная фигура — служебный приём, чтобы узнать занятость клетки через
-// публичный board.canPlace, не трогая скрытое внутреннее представление сетки.
+// A single-cell shape — a trick to check cell occupancy via the public
+// board.canPlace, without touching the grid's hidden internal representation.
 const UNIT_CELL = { cells: [[0, 0]] };
 
-/** Занята ли клетка (row, col) — определяется только через публичный canPlace. */
+/** Whether cell (row, col) is occupied — determined only via the public canPlace. */
 export function isOccupied(board, row, col) {
   return !board.canPlace(UNIT_CELL, row, col);
 }
@@ -90,8 +89,8 @@ function drawRoundedRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// Лёгкий градиент сверху вниз для объёма — «блоки выглядят глянцевыми,
-// как в оригинальной игре» (reference.md, принцип).
+// Subtle top-to-bottom gradient for depth — "blocks look glossy, like in
+// the original game" (reference.md, design principle).
 function drawGloss(ctx, x, y, size) {
   const gradient = ctx.createLinearGradient(x, y, x, y + size);
   gradient.addColorStop(0, 'rgba(255,255,255,0.35)');
@@ -110,12 +109,12 @@ function drawBlock(ctx, x, y, size, color) {
 }
 
 /**
- * Рисует поле: фон, клетки (пустые/занятые цветом из colorGrid) и, если
- * передан highlight, полупрозрачную подсветку допустимости позиции при драге
- * (зелёная — можно поставить, красная — нельзя, R05.1).
+ * Draws the board: background, cells (empty/occupied with colorGrid color),
+ * and, if highlight is passed, a translucent overlay showing whether the
+ * drag position is valid (green = can place, red = can't, R05.1).
  * @param {CanvasRenderingContext2D} ctx
- * @param {object} board - объект с canPlace (см. game/board.js)
- * @param {(string|null)[][]} colorGrid - цвет занятой клетки, ведёт вызывающий код
+ * @param {object} board - object with canPlace (see game/board.js)
+ * @param {(string|null)[][]} colorGrid - color of each occupied cell, owned by the caller
  * @param {number} cellSize
  * @param {'dark'|'light'} theme
  * @param {{row:number, col:number, valid:boolean}[]} [highlight]
@@ -152,7 +151,7 @@ export function drawBoard(ctx, board, colorGrid, cellSize, theme, highlight) {
   }
 }
 
-/** Габариты фигуры (ширина/высота ограничивающего прямоугольника в клетках). */
+/** Shape bounds (width/height of its bounding box, in cells). */
 function boundsOf(shape) {
   let maxRow = 0;
   let maxCol = 0;
@@ -163,7 +162,7 @@ function boundsOf(shape) {
   return { width: maxCol + 1, height: maxRow + 1 };
 }
 
-/** Рисует превью фигуры, вписанное и отцентрованное в квадратный канвас лотка. */
+/** Draws a shape preview, scaled to fit and centered in the square tray canvas. */
 export function drawShapePreview(ctx, shape, color, canvasSize) {
   ctx.clearRect(0, 0, canvasSize, canvasSize);
   const { width, height } = boundsOf(shape);
@@ -179,7 +178,7 @@ export function drawShapePreview(ctx, shape, color, canvasSize) {
   }
 }
 
-/** Рисует «призрак» перетаскиваемой фигуры поверх поля в позиции (row, col). */
+/** Draws a "ghost" of the dragged shape over the board at (row, col). */
 export function drawShapeGhost(ctx, shape, row, col, cellSize, color) {
   ctx.save();
   ctx.globalAlpha = 0.85;
@@ -190,7 +189,7 @@ export function drawShapeGhost(ctx, shape, row, col, cellSize, color) {
   ctx.restore();
 }
 
-/** Смешивает hex-цвет с белым на amount (0..1) — светлее исходного, для мерцающего контура. */
+/** Mixes a hex color with white by amount (0..1) — lighter than the original, for the pulsing outline. */
 function lightenColor(hex, amount) {
   const num = parseInt(hex.replace('#', ''), 16);
   const r = (num >> 16) & 0xff;
@@ -201,12 +200,12 @@ function lightenColor(hex, amount) {
 }
 
 /**
- * Превью потенциальной комбо-очистки при перетаскивании (R05.3): клетки,
- * которые исчезнут после установки фигуры, подсвечиваются её цветом —
- * мягкое свечение (shadowBlur) + мерцающий светлеющий контур, оба
- * пульсируют по фазе pulse (0..1, обычно синусоида) — «дыхание» подсветки.
- * Чистая функция одного кадра; сам цикл дыхания ведёт ui/animations.js
- * (createComboPreview), не тестируется юнит-тестами (визуальный эффект).
+ * Preview of a potential combo clear while dragging (R05.3): cells that
+ * would disappear after placing the shape are highlighted in its color —
+ * a soft glow (shadowBlur) plus a pulsing lightened outline, both driven by
+ * phase pulse (0..1, usually a sine wave) for a "breathing" effect.
+ * Pure single-frame function; the breathing loop itself lives in
+ * ui/animations.js (createComboPreview). Not unit-tested (visual effect).
  * @param {CanvasRenderingContext2D} ctx
  * @param {{row:number, col:number}[]} cells
  * @param {number} cellSize

@@ -1,18 +1,19 @@
 // game/events.js
-// Лёгкие временные ивенты на одну игровую сессию — не привязаны к дате/
-// реальному времени (в отличие от game/challenges.js), а к ходам партии:
-// один раз за партию, в случайный момент между TRIGGER_MOVE_MIN и
-// TRIGGER_MOVE_MAX-м поставленным блоком, включается один случайный эффект
-// на DURATION_MIN..DURATION_MAX ходов, затем сам гаснет. Не более одного
-// ивента за партию — по просьбе «не напряжным и не сложным».
+// Lightweight temporary events for a single game session - not tied to a
+// date/real time (unlike game/challenges.js), but to moves within the game:
+// once per game, at a random point between the TRIGGER_MOVE_MIN and
+// TRIGGER_MOVE_MAX-th placed block, one random effect turns on for
+// DURATION_MIN..DURATION_MAX moves, then switches itself off. At most one
+// event per game - per request "not stressful and not complicated".
 //
-// Чистая логика без DOM/board — сами эффекты (множители очков/бонуса,
-// повышенный шанс крупных фигур) читает вызывающий код (app.js,
-// game/shapes.js) через геттеры ниже. «Дождь крупных фигур» НЕ обходит
-// проверку допустимости позиции: он только повышает вес крупных фигур в
-// game/shapes.js (pickForBoard), а фильтр «есть хоть одна допустимая
-// позиция» (findValidPlacements) там применяется первым и безусловно — так
-// что фигуру, которую физически некуда поставить, ивент всё равно не выдаст.
+// Pure logic, no DOM/board - the actual effects (score/bonus multipliers,
+// boosted large-shape chance) are read by caller code (app.js,
+// game/shapes.js) via the getters below. "Big shape rain" does NOT bypass
+// the placement validity check: it only boosts large-shape weight in
+// game/shapes.js (pickForBoard), where the "has at least one valid
+// position" filter (findValidPlacements) is still applied first and
+// unconditionally - so the event still never hands out a shape with
+// nowhere to go.
 
 export const EVENT_TYPES = ['doublePoints', 'bigShapeRain', 'colorBonusRush'];
 
@@ -20,10 +21,10 @@ const TRIGGER_MOVE_MIN = 5;
 const TRIGGER_MOVE_MAX = 15;
 const DURATION_MIN = 6;
 const DURATION_MAX = 8;
-// За сколько ходов до старта показывать лёгкий безадресный намёк («скоро
-// что-то произойдёт») — не раскрывает ни тип, ни точный ход, просто готовит
-// игрока к тому, что ивент близко (просьба игрока — «добавить лёгкий намёк
-// заранее», а не оставлять его полной внезапностью).
+// How many moves before the start to show a light, non-specific hint ("something
+// will happen soon") - reveals neither the type nor the exact move, just
+// prepares the player that an event is near (player request - "add a light
+// hint in advance" instead of leaving it a total surprise).
 const HINT_LEAD_MOVES = 2;
 
 function randomBetween(min, max) {
@@ -35,9 +36,9 @@ function randomBetween(min, max) {
  */
 
 /**
- * Создаёт контроллер ивентов на одну партию. Состояние — на весь модуль не
- * хранится (в отличие от game/shapes.js waveState): вызывающий код (app.js)
- * держит один инстанс на партию и сам вызывает reset() при новой игре.
+ * Creates an event controller for one game. State isn't module-level
+ * (unlike game/shapes.js waveState): caller code (app.js) holds one
+ * instance per game and calls reset() itself on a new game.
  * @returns {{
  *   reset: () => void,
  *   onShapePlaced: (shapesPlacedThisGame: number) => ({type: 'started'|'ended', eventType: string} | null),
@@ -59,11 +60,10 @@ export function createEventDirector() {
   }
 
   /**
-   * Вызывать после каждой успешно поставленной фигуры, с уже увеличенным
-   * счётчиком shapesPlacedThisGame (его ведёт app.js). Возвращает, что
-   * изменилось именно этим вызовом, или null, если ивент не стартовал и не
-   * закончился прямо сейчас — вызывающий код показывает тост/перерисовывает
-   * верхнюю панель только когда действительно есть изменение.
+   * Call after every successfully placed shape, with shapesPlacedThisGame
+   * already incremented (app.js tracks it). Returns what changed on this
+   * exact call, or null if no event started or ended right now - caller
+   * only shows a toast/re-renders the top bar when there's an actual change.
    * @param {number} shapesPlacedThisGame
    * @returns {{type: 'started'|'ended', eventType: string} | null}
    */
@@ -104,11 +104,10 @@ export function createEventDirector() {
   }
 
   /**
-   * Безадресный намёк «скоро что-то произойдёт» — активен ровно
-   * HINT_LEAD_MOVES ходов непосредственно перед стартом (и только пока
-   * ивент этой партии ещё не сработал ни разу). Не привязан к
-   * onShapePlaced — можно спрашивать в любой момент рендера верхней панели,
-   * просто по текущему счётчику ходов партии.
+   * Non-specific "something will happen soon" hint - active for exactly
+   * HINT_LEAD_MOVES moves immediately before the start (and only while this
+   * game's event hasn't fired yet). Not tied to onShapePlaced - can be
+   * queried at any top-bar render, just from the current move counter.
    * @param {number} shapesPlacedThisGame
    * @returns {boolean}
    */

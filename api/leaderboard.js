@@ -1,20 +1,20 @@
 // api/leaderboard.js
-// Серверлесс-функция Vercel: GET /api/leaderboard -> { entries: [{userId,name,score}] }
-// (топ-20 глобально, за всё время, публично, без авторизации — просто чтение).
-// POST /api/leaderboard {initData, score} -> {ok, rank, bestScore} — записывает
-// результат игрока, только если он выше уже сохранённого; initData обязателен
-// и проверяется (bot/verify-webapp-data.js), иначе кто угодно мог бы прислать
-// чужой Telegram id и записать очки от чужого имени.
+// Vercel serverless function: GET /api/leaderboard -> { entries: [{userId,name,score}] }
+// (top-20 global, all-time, public, no auth — just a read).
+// POST /api/leaderboard {initData, score} -> {ok, rank, bestScore} — saves the
+// player's result, only if it beats what's already stored; initData is required
+// and verified (bot/verify-webapp-data.js), otherwise anyone could send someone
+// else's Telegram id and post a score under their name.
 //
-// Хранилище — Vercel KV (Redis, см. README при деплое): без него лидерборд
-// не работает, но остальная игра не должна ломаться — GET/POST в этом случае
-// отвечают 503, а не падают с ошибкой (тот же принцип мягкого отказа, что и
-// у api/create-invoice.js).
+// Storage — Vercel KV (Redis, see README on deploy): without it the leaderboard
+// doesn't work, but the rest of the game must keep running — GET/POST respond
+// with 503 in that case instead of throwing (same soft-failure principle as
+// api/create-invoice.js).
 
 import { verifyInitData } from '../bot/verify-webapp-data.js';
 
-const LEADERBOARD_KEY = 'boombl:leaderboard:alltime:scores'; // sorted set: member=userId, score=лучший счёт
-const NAMES_KEY = 'boombl:leaderboard:alltime:names'; // hash: userId -> отображаемое имя
+const LEADERBOARD_KEY = 'boombl:leaderboard:alltime:scores'; // sorted set: member=userId, score=best score
+const NAMES_KEY = 'boombl:leaderboard:alltime:names'; // hash: userId -> display name
 const TOP_N = 20;
 
 function sendJson(res, statusCode, payload) {
@@ -24,8 +24,8 @@ function sendJson(res, statusCode, payload) {
 }
 
 /**
- * Создаёт обработчик с инжектируемыми зависимостями — для тестов (мок fetch,
- * без реального похода в Upstash/Vercel KV) и для реальной работы.
+ * Creates the handler with injectable dependencies — for tests (mock fetch,
+ * no real calls to Upstash/Vercel KV) and for production use.
  * @param {{kvUrl?: string, kvToken?: string, botToken?: string, fetchImpl?: Function}} [deps]
  */
 export function createLeaderboardHandler(deps = {}) {
@@ -34,7 +34,7 @@ export function createLeaderboardHandler(deps = {}) {
   const botToken = deps.botToken ?? process.env.TELEGRAM_BOT_TOKEN ?? '';
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
 
-  /** Один вызов команды Redis через REST API Upstash/Vercel KV. */
+  /** Runs a single Redis command via the Upstash/Vercel KV REST API. */
   async function redis(command) {
     const res = await fetchImpl(kvUrl, {
       method: 'POST',
@@ -49,16 +49,16 @@ export function createLeaderboardHandler(deps = {}) {
     return body.result;
   }
 
-  /** Отображаемое имя игрока (R «глобальный лидерборд») — username приоритетнее ФИО. */
+  /** Player's display name (R "global leaderboard") — username takes priority over full name. */
   function displayName(user) {
     if (user.username) return user.username;
     const full = [user.first_name, user.last_name].filter(Boolean).join(' ');
-    return full || 'Игрок';
+    return full || 'Player';
   }
 
   async function handleGet(req, res) {
     try {
-      // ZREVRANGE ключ 0 (N-1) WITHSCORES -> плоский массив [участник, счёт, участник, счёт, ...]
+      // ZREVRANGE key 0 (N-1) WITHSCORES -> flat array [member, score, member, score, ...]
       const raw = await redis(['ZREVRANGE', LEADERBOARD_KEY, 0, TOP_N - 1, 'WITHSCORES']);
       const entries = [];
       for (let i = 0; i < raw.length; i += 2) {
@@ -67,7 +67,7 @@ export function createLeaderboardHandler(deps = {}) {
       const userIds = entries.map((e) => e.userId);
       const names = userIds.length ? await redis(['HMGET', NAMES_KEY, ...userIds]) : [];
       entries.forEach((e, i) => {
-        e.name = names[i] || 'Игрок';
+        e.name = names[i] || 'Player';
       });
 
       sendJson(res, 200, { entries });
@@ -94,8 +94,8 @@ export function createLeaderboardHandler(deps = {}) {
     const name = displayName(verified.user);
 
     try {
-      // GT — обновляет только если новый счёт больше уже сохранённого (иначе
-      // не трогает существующую запись); CH — вернуть, изменилось ли что-то.
+      // GT — only updates if the new score beats the stored one (otherwise
+      // leaves the existing entry untouched); CH — return whether anything changed.
       await redis(['ZADD', LEADERBOARD_KEY, 'GT', 'CH', score, userId]);
       await redis(['HSET', NAMES_KEY, userId, name]);
 
@@ -114,8 +114,8 @@ export function createLeaderboardHandler(deps = {}) {
 
   return async function handler(req, res) {
     if (!kvUrl || !kvToken) {
-      // Хранилище не настроено (KV не подключён) — мягкий отказ, игра без
-      // лидерборда всё равно должна работать (spec §Решения 9, R46i).
+      // Storage isn't configured (KV not connected) — soft failure, the game
+      // without a leaderboard must still work (spec §Decisions 9, R46i).
       sendJson(res, 503, { error: 'leaderboard_not_configured' });
       return;
     }
@@ -132,5 +132,5 @@ export function createLeaderboardHandler(deps = {}) {
   };
 }
 
-// Экспорт по умолчанию — точка входа для Vercel (боевые зависимости).
+// Default export — Vercel entry point (production dependencies).
 export default createLeaderboardHandler();
