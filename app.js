@@ -42,19 +42,42 @@ import { loadConfig } from './config.js';
 // Бонус за закрытие изолированного пробела (R05.4) — за клетку закрытого
 // пробела. Открытое число баланса — не задано спецификацией, подобрано так,
 // чтобы быть заметным на фоне обычных очков (1/клетку) и очистки линий (10×N²).
-const GAP_FILL_BONUS_PER_CELL = 10;
+// Поднято с 10 (запрос игрока — «больше вариантов как набрать очков, может
+// награду увеличить») — крупные ходы должны заметнее двигать счёт к большим
+// цифрам (100 000 и т.д.), не трогая при этом уже проверенную формулу
+// линий/комбо в game/score.js (она сверена с приложенным игроком примером).
+const GAP_FILL_BONUS_PER_CELL = 15;
 // Бонус за полное удаление какого-то одного цвета с поля (R05.10) — за
 // клетку этого цвета, удалённую именно этим ходом. Считается для КАЖДОГО
 // цвета, который этим ходом исчез с поля целиком (был хоть где-то на поле
 // до хода — и нигде не остался после); если очистка убрала сразу несколько
 // цветов целиком (например, полная очистка всего поля), бонусы суммируются.
-const COLOR_CLEAR_BONUS_PER_CELL = 20;
+// Поднято с 20 — см. комментарий у GAP_FILL_BONUS_PER_CELL выше.
+const COLOR_CLEAR_BONUS_PER_CELL = 30;
 // Флэт-бонус за полную очистку поля («идеальный» ход, R06) — задан явно.
-const FULL_CLEAR_BONUS = 1500;
+// Поднято с 1500 — см. комментарий у GAP_FILL_BONUS_PER_CELL выше.
+const FULL_CLEAR_BONUS = 2500;
 // Короткая пауза (R06: «короткая пауза после очистки») между обычным
 // взрывом очищенной линии и большим праздничным откликом полной очистки —
 // иначе оба эффекта стартуют в один и тот же кадр и сливаются в один.
 const FULL_CLEAR_PAUSE_MS = 280;
+
+// Именные комбо-тиры (запрос игрока — «больше вариантов комбо»): разовый
+// попап+флэт-бонус на каждый впервые достигнутый порог ТЕКУЩЕЙ серии —
+// именно достигнутый, не «на каждый ход внутри тира» (см. announcedComboTier
+// ниже, сбрасывается вместе с самим комбо). Уровни строго возрастающие.
+const COMBO_TIERS = [
+  { threshold: 5, key: 'comboTier5', bonus: 50 },
+  { threshold: 10, key: 'comboTier10', bonus: 150 },
+  { threshold: 20, key: 'comboTier20', bonus: 400 },
+];
+
+// Вехи по итоговому счёту партии (запрос игрока — «хочу набирать по 100000
+// очков и так далее»): разовый попап+бонус на каждый впервые пересечённый
+// рубеж ЭТОЙ партии (announcedMilestones ниже, сбрасывается в resetGame).
+// Бонус — доля от самого рубежа, поэтому крупные рубежи празднуются заметнее.
+const SCORE_MILESTONES = [10000, 25000, 50000, 100000, 250000, 500000, 1000000];
+const SCORE_MILESTONE_BONUS_RATE = 0.05;
 
 // Иконки временных ивентов партии (game/events.js) — для тоста-анонса и
 // верхней панели, пока ивент активен.
@@ -121,6 +144,12 @@ let hadInvalidThisGame = false; // хоть одна неудачная попы
 let shapesPlacedThisGame = 0; // фигур поставлено именно в этой партии (для «идеального старта»)
 let linesClearedThisGame = 0; // для мини-статистики на экране Game Over
 let bestComboThisGame = 0; // для мини-статистики на экране Game Over
+// Самый высокий уже показанный тир (COMBO_TIERS) ТЕКУЩЕЙ серии комбо —
+// сбрасывается в 0 вместе с самим комбо (см. placeShape), а не только в
+// resetGame(), иначе тир не смог бы показаться заново в новой серии той же партии.
+let announcedComboTier = 0;
+// Рубежи счёта (SCORE_MILESTONES), уже отмеченные в ЭТОЙ партии — сбрасывается в resetGame().
+let announcedMilestones = new Set();
 
 function currentTheme() {
   return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
@@ -382,6 +411,34 @@ async function main() {
     updateComboBadge(comboStreak);
   }
 
+  // Вехи по общему счёту партии (SCORE_MILESTONES) — запускать после КАЖДОГО
+  // изменения totalScore, откуда бы оно ни пришло (обычный ход или отложенный
+  // бонус полной очистки), чтобы рубеж не пропустить и не отметить дважды:
+  // announcedMilestones — источник истины «что уже отмечено в этой партии».
+  // Если один скачок счёта пересёк сразу несколько рубежей — один попап на
+  // самый высокий, бонусы за все пересечённые суммируются.
+  function checkScoreMilestones() {
+    const crossed = SCORE_MILESTONES.filter((m) => totalScore >= m && !announcedMilestones.has(m));
+    if (crossed.length === 0) return;
+    let bonus = 0;
+    for (const milestone of crossed) {
+      announcedMilestones.add(milestone);
+      bonus += Math.round(milestone * SCORE_MILESTONE_BONUS_RATE);
+    }
+    const highest = crossed[crossed.length - 1];
+    totalScore += bonus;
+    revealScore();
+    playBonusPopup(bonusLayer, {
+      x: (BOARD_SIZE / 2) * cellSize,
+      y: (BOARD_SIZE / 2) * cellSize,
+      text: `${i18n.t('scoreMilestone', { goal: highest })} +${bonus}`,
+      big: true,
+    });
+    telegramBridge.haptic('lineClear');
+    reportAchievements({ 'max:bestGameScore': totalScore });
+    reportGameEvent({ scoreDelta: bonus });
+  }
+
   async function showGameOver() {
     const state = await gameOverScreen.show(totalScore, {
       linesCleared: linesClearedThisGame,
@@ -470,6 +527,30 @@ async function main() {
     const points = rawPoints * scoreMultiplier;
     linesClearedThisGame += linesCleared;
     bestComboThisGame = Math.max(bestComboThisGame, comboStreak);
+
+    // Именные комбо-тиры (COMBO_TIERS) — сбрасываем «уже показанное» вместе с
+    // самим комбо (comboStreak===0 означает серия оборвалась — 3 промаха
+    // подряд, см. game/score.js), иначе поднимаем на самый высокий впервые
+    // достигнутый именно СЕЙЧАС порог (t.threshold > announcedComboTier не
+    // даёт показать его повторно на каждом следующем ходе внутри той же
+    // серии). Безопасно вызывать каждый ход — если ничего нового не
+    // достигнуто, reachedTier просто не найдётся.
+    if (comboStreak === 0) announcedComboTier = 0;
+    let comboTierBonus = 0;
+    const reachedTier = [...COMBO_TIERS].reverse().find(
+      (tier) => comboStreak >= tier.threshold && tier.threshold > announcedComboTier
+    );
+    if (reachedTier) {
+      announcedComboTier = reachedTier.threshold;
+      comboTierBonus = reachedTier.bonus;
+      playBonusPopup(bonusLayer, {
+        x: (BOARD_SIZE / 2) * cellSize,
+        y: (BOARD_SIZE / 2) * cellSize,
+        text: `${i18n.t(reachedTier.key)} +${comboTierBonus}`,
+        big: true,
+      });
+    }
+
     // Захватываем ДО обновления movesSinceClear — «камбэк» (R05.7) считает
     // именно то, что было накоплено ПЕРЕД этим ходом, не после его сброса.
     const wasStruggling = movesSinceClear >= 6;
@@ -579,9 +660,10 @@ async function main() {
       });
     }
 
-    const totalBonus = gapBonus + colorClearBonus;
+    const totalBonus = gapBonus + colorClearBonus + comboTierBonus;
     totalScore += points + totalBonus;
     updateScoreUI(comboStreak);
+    checkScoreMilestones();
 
     reportAchievements({
       totalShapesPlaced: 1,
@@ -625,6 +707,7 @@ async function main() {
         });
         totalScore += FULL_CLEAR_BONUS;
         revealScore();
+        checkScoreMilestones();
         // Отдельным событием (не в основном reportGameEvent этого хода —
         // тогда бонус посчитался бы в тот же вызов дважды с учётом задержки),
         // только scoreDelta — linesCleared/comboStreak этот ход уже разово
@@ -709,6 +792,8 @@ async function main() {
     shapesPlacedThisGame = 0;
     linesClearedThisGame = 0;
     bestComboThisGame = 0;
+    announcedComboTier = 0;
+    announcedMilestones = new Set();
     // Сброс счёта — сразу, без анимации отсчёта вниз (animateScoreCountUp
     // внутри updateScoreUI ничего не делает при from===to).
     displayedScore = 0;

@@ -22,8 +22,13 @@ const ACHIEVEMENTS = [
   { id: 'score-2000', tier: 'common', icon: '🏆', metric: 'lifetimeScore', goal: 2000 },
   { id: 'score-10000', tier: 'uncommon', icon: '🏆', metric: 'lifetimeScore', goal: 10000 },
   { id: 'score-50000', tier: 'rare', icon: '👑', metric: 'lifetimeScore', goal: 50000 },
+  { id: 'score-100000', tier: 'epic', icon: '👑', metric: 'lifetimeScore', goal: 100000 },
+  { id: 'score-250000', tier: 'epic', icon: '💎', metric: 'lifetimeScore', goal: 250000 },
   { id: 'game-score-1000', tier: 'common', icon: '⭐', metric: 'bestGameScore', goal: 1000 },
   { id: 'game-score-5000', tier: 'uncommon', icon: '🌟', metric: 'bestGameScore', goal: 5000 },
+  { id: 'game-score-10000', tier: 'rare', icon: '🌠', metric: 'bestGameScore', goal: 10000 },
+  { id: 'game-score-50000', tier: 'epic', icon: '🌌', metric: 'bestGameScore', goal: 50000 },
+  { id: 'game-score-100000', tier: 'epic', icon: '👑', metric: 'bestGameScore', goal: 100000 },
 
   // ---- комбо ----
   { id: 'first-combo', tier: 'common', icon: '🔥', metric: 'maxComboStreak', goal: 1 },
