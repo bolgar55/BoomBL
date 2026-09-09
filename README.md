@@ -44,4 +44,4 @@ None of the environment variables below are required for the game itself - each 
 | `GAME_URL` | The bot's "Play" button and the correct link in "Share result" | The game still works when opened at its real hosting URL directly; only the bot's button/share link would point at a placeholder |
 | `KV_REST_API_URL` / `KV_REST_API_TOKEN` | The leaderboard's storage (a Redis-compatible key-value store) | The leaderboard screen shows a "couldn't load" message; nothing else is affected |
 
-`STARS_AMOUNTS` (Telegram Stars donation amounts) exists in `.env.example` and `api/config.js`, but the donate button was removed from the UI - it currently has no effect either way.
+`STARS_AMOUNTS` (Telegram Stars donation amounts) is also read by `api/config.js`, but the donate button was removed from the UI - it currently has no effect either way.
