@@ -6,7 +6,7 @@
 // и вне Telegram) и «Поделиться результатом» (через telegramBridge.shareResult).
 // DOM экрана модуль создаёт сам при первом show() и добавляет в container.
 
-import { animateScoreCountUp, playGameOverConfetti } from './animations.js?v=0.4.4';
+import { animateScoreCountUp, playGameOverConfetti } from './animations.js?v=0.4.5';
 
 const HIGH_SCORE_KEY = 'highScore';
 
@@ -188,8 +188,14 @@ export function createGameOverScreen(deps) {
     const state = computeGameOverState(score, previousHighScore);
     lastState = state;
 
+    // Не ждём запись нового рекорда перед показом экрана — раньше именно
+    // этот await вешал весь Game Over (реальный баг: набрал рекорд, экран
+    // не появлялся, игра «подвисала» — CloudStorage Telegram у части
+    // клиентов вообще не вызывает колбэк, см. game/persistence.js). Экран
+    // показываем сразу, сохранение продолжается в фоне; сама persistence.js
+    // теперь ещё и подстрахована таймаутом с откатом на localStorage.
     if (state.isNewHighScore) {
-      await persistence.setItem(HIGH_SCORE_KEY, state.highScore);
+      persistence.setItem(HIGH_SCORE_KEY, state.highScore);
     }
 
     const el = ensureOverlay();

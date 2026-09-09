@@ -27,31 +27,64 @@ export function createPersistence(deps = {}) {
   const storage = deps.storage ?? globalThis.window?.localStorage ?? globalThis.localStorage ?? null;
   const cloudStorage = telegram?.CloudStorage ?? null;
 
-  // CloudStorage Telegram — колбэк-API, оборачиваем в Promise для единообразия.
-  function cloudGet(key) {
+  // Клиенты Telegram старее той версии, что реально поддерживает CloudStorage,
+  // всё равно выставляют сам объект CloudStorage — но вызов getItem/setItem на
+  // них печатает "CloudStorage is not supported in version N" и молча НЕ
+  // вызывает колбэк вообще (ни успеха, ни ошибки) — таков реальный SDK
+  // Telegram. Без таймаута это вешает await ниже НАВСЕГДА (реальный баг:
+  // экран Game Over не появлялся при новом рекорде — именно там setItem
+  // ждали). Таймаут превращает такое зависание в обычный сбой — try/catch в
+  // getItem/setItem ниже и так уже откатывается на localStorage.
+  const CLOUD_CALLBACK_TIMEOUT_MS = 2500;
+
+  function withTimeout(promise) {
     return new Promise((resolve, reject) => {
-      try {
-        cloudStorage.getItem(key, (error, value) => {
-          if (error) reject(error);
-          else resolve(value);
-        });
-      } catch (error) {
-        reject(error);
-      }
+      const timer = setTimeout(
+        () => reject(new Error('CloudStorage callback timed out')),
+        CLOUD_CALLBACK_TIMEOUT_MS
+      );
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          clearTimeout(timer);
+          reject(error);
+        }
+      );
     });
   }
 
+  // CloudStorage Telegram — колбэк-API, оборачиваем в Promise для единообразия.
+  function cloudGet(key) {
+    return withTimeout(
+      new Promise((resolve, reject) => {
+        try {
+          cloudStorage.getItem(key, (error, value) => {
+            if (error) reject(error);
+            else resolve(value);
+          });
+        } catch (error) {
+          reject(error);
+        }
+      })
+    );
+  }
+
   function cloudSet(key, value) {
-    return new Promise((resolve, reject) => {
-      try {
-        cloudStorage.setItem(key, value, (error) => {
-          if (error) reject(error);
-          else resolve();
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
+    return withTimeout(
+      new Promise((resolve, reject) => {
+        try {
+          cloudStorage.setItem(key, value, (error) => {
+            if (error) reject(error);
+            else resolve();
+          });
+        } catch (error) {
+          reject(error);
+        }
+      })
+    );
   }
 
   // Безопасное чтение/запись localStorage — сбой (например, приватный режим
