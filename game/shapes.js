@@ -7,7 +7,7 @@
 // поле через game/board.js (findValidPlacements/canPlacePiece), чтобы не
 // выдавать фигуры, которые вообще некуда поставить, пока на поле есть место.
 
-import { BOARD_SIZE, findValidPlacements } from './board.js?v=0.4.8';
+import { BOARD_SIZE, findValidPlacements } from './board.js?v=0.4.9';
 
 /**
  * @typedef {{ id: string, cells: number[][] }} Shape

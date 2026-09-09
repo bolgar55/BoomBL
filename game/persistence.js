@@ -127,6 +127,11 @@ export function createPersistence(deps = {}) {
     if (cloudStorage) {
       try {
         const raw = await cloudGet(key);
+        // Зеркалим успешное чтение в localStorage (см. setItem ниже) — иначе
+        // локальный кэш никогда не обновляется чтением, и следующий сбой/
+        // таймаут cloud снова откатится на устаревшее (или дефолтное)
+        // значение вместо реального последнего известного.
+        localSet(key, raw);
         return parse(raw, fallback);
       } catch {
         // Сбой CloudStorage при чтении — тихий откат на localStorage (R12.2).
@@ -142,6 +147,15 @@ export function createPersistence(deps = {}) {
     if (cloudStorage) {
       try {
         await cloudSet(key, raw);
+        // Зеркалим успешную запись и в localStorage — без этого localStorage
+        // навсегда остаётся "холодным" (никогда не обновляется, пока
+        // CloudStorage работает), и любой единичный сбой/таймаут cloud
+        // (см. withTimeout выше) откатывается на пустое/дефолтное значение
+        // вместо реального. Реальный баг: рекорд 5197 в облаке, разовый
+        // сбой чтения при Game Over откатился на 0 → "новый рекорд" на 1500,
+        // а следующая запись рисковала затереть настоящие 5197 неправильным
+        // меньшим числом.
+        localSet(key, raw);
         return;
       } catch {
         // Сбой CloudStorage при записи — тихий откат на localStorage.
