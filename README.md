@@ -15,7 +15,7 @@ A block-placement puzzle game (Block Blast-style) built as a Telegram Mini App. 
 
 ## Tech stack
 
-Plain ES modules, no build step, no framework. Canvas 2D for rendering. Backend is a handful of Vercel serverless functions plus a webhook-based Telegram bot.
+Plain ES modules, no build step, no framework. Canvas 2D for rendering. Backend is a handful of serverless functions plus a webhook-based Telegram bot.
 
 ## Project structure
 
@@ -25,7 +25,7 @@ game/                           Pure game logic (board, shapes, score, achieveme
 ui/                             Rendering, input, animations, and screen components
 telegram/                       Telegram.WebApp bridge
 i18n/                           ru/en string dictionary
-api/                            Vercel serverless functions (config, leaderboard, Stars invoice, bot webhook)
+api/                            Serverless functions (config, leaderboard, Stars invoice, bot webhook)
 bot/                            Telegram bot update handling + initData verification
 ```
 
@@ -33,8 +33,8 @@ bot/                            Telegram bot update handling + initData verifica
 
 The frontend and backend are deployed from the same repository to two different targets:
 
-- **Frontend** — GitHub Pages (static files only). This alone is enough to play the game - it's a fully client-side app with no required backend.
-- **Backend** — Vercel (`api/` and `vercel.json`), an optional add-on for the Telegram bot webhook and the global leaderboard.
+- **Frontend** — static hosting (e.g. GitHub Pages) is enough to play the game - it's a fully client-side app with no required backend.
+- **Backend** — the `api/` serverless functions, an optional add-on for the Telegram bot webhook and the global leaderboard.
 
 None of the environment variables below are required for the game itself - each one only unlocks one specific backend feature, and every feature fails gracefully (with a clear disabled/error state, never a crash) when its variable is missing:
 
@@ -42,6 +42,6 @@ None of the environment variables below are required for the game itself - each 
 | --- | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | The bot's messages, and verifying who's submitting a leaderboard score | The bot can't respond; leaderboard score submissions are rejected (viewing the leaderboard still works) |
 | `GAME_URL` | The bot's "Play" button and the correct link in "Share result" | The game still works when opened at its real hosting URL directly; only the bot's button/share link would point at a placeholder |
-| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | The leaderboard's storage (Redis-compatible, e.g. Vercel KV) | The leaderboard screen shows a "couldn't load" message; nothing else is affected |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | The leaderboard's storage (a Redis-compatible key-value store) | The leaderboard screen shows a "couldn't load" message; nothing else is affected |
 
 `STARS_AMOUNTS` (Telegram Stars donation amounts) exists in `.env.example` and `api/config.js`, but the donate button was removed from the UI - it currently has no effect either way.
