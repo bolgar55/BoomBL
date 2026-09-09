@@ -21,12 +21,12 @@
 // modules), поэтому версию приходится вписывать вручную в каждую строку —
 // держать её синхронной с package.json/version-tag на каждый пуш (см.
 // memory: «always bump version»).
-import { Board, BOARD_SIZE, hasAnyValidMove } from './game/board.js?v=0.4.7';
-import { generateShapeSet } from './game/shapes.js?v=0.4.7';
-import { Score } from './game/score.js?v=0.4.7';
-import { createEventDirector } from './game/events.js?v=0.4.7';
-import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js?v=0.4.7';
-import { attachDragAndDrop, isValidDrop } from './ui/input.js?v=0.4.7';
+import { Board, BOARD_SIZE, hasAnyValidMove } from './game/board.js?v=0.4.8';
+import { generateShapeSet } from './game/shapes.js?v=0.4.8';
+import { Score } from './game/score.js?v=0.4.8';
+import { createEventDirector } from './game/events.js?v=0.4.8';
+import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js?v=0.4.8';
+import { attachDragAndDrop, isValidDrop } from './ui/input.js?v=0.4.8';
 import {
   playAppear,
   playShake,
@@ -38,15 +38,15 @@ import {
   createFullClearBurstLayer,
   animateScoreCountUp,
   playBonusPopup,
-} from './ui/animations.js?v=0.4.7';
-import { createPersistence } from './game/persistence.js?v=0.4.7';
-import { createTelegramBridge } from './telegram/bridge.js?v=0.4.7';
-import { createI18n } from './i18n/index.js?v=0.4.7';
-import { createChallenges } from './game/challenges.js?v=0.4.7';
-import { createAchievements } from './game/achievements.js?v=0.4.7';
-import { createGameOverScreen } from './ui/gameover.js?v=0.4.7';
-import { createAchievementsScreen, showAchievementUnlock, showEventToast } from './ui/achievements.js?v=0.4.7';
-import { loadConfig } from './config.js?v=0.4.7';
+} from './ui/animations.js?v=0.4.8';
+import { createPersistence } from './game/persistence.js?v=0.4.8';
+import { createTelegramBridge } from './telegram/bridge.js?v=0.4.8';
+import { createI18n } from './i18n/index.js?v=0.4.8';
+import { createChallenges } from './game/challenges.js?v=0.4.8';
+import { createAchievements } from './game/achievements.js?v=0.4.8';
+import { createGameOverScreen } from './ui/gameover.js?v=0.4.8';
+import { createAchievementsScreen, showAchievementUnlock, showEventToast } from './ui/achievements.js?v=0.4.8';
+import { loadConfig } from './config.js?v=0.4.8';
 
 // Бонус за закрытие изолированного пробела (R05.4) — за клетку закрытого
 // пробела. Открытое число баланса — не задано спецификацией, подобрано так,

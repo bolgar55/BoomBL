@@ -7,7 +7,7 @@
 // поле через game/board.js (findValidPlacements/canPlacePiece), чтобы не
 // выдавать фигуры, которые вообще некуда поставить, пока на поле есть место.
 
-import { BOARD_SIZE, findValidPlacements } from './board.js?v=0.4.7';
+import { BOARD_SIZE, findValidPlacements } from './board.js?v=0.4.8';
 
 /**
  * @typedef {{ id: string, cells: number[][] }} Shape
@@ -96,6 +96,55 @@ function cloneShape(source) {
 /** Случайный выбор одной фигуры каталога без учёта поля — прежнее чистое поведение. */
 function pickPureRandom() {
   return cloneShape(SHAPE_CATALOG[Math.floor(Math.random() * SHAPE_CATALOG.length)]);
+}
+
+// Сдвигает клетки так, чтобы минимальные row/col стали 0, и сортирует —
+// два одинаковых по форме набора клеток после этого сравниваются просто
+// поэлементно, независимо от исходных координат/порядка.
+function normalizeCells(cells) {
+  let minRow = Infinity;
+  let minCol = Infinity;
+  for (const [r, c] of cells) {
+    if (r < minRow) minRow = r;
+    if (c < minCol) minCol = c;
+  }
+  return cells
+    .map(([r, c]) => [r - minRow, c - minCol])
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+}
+
+function cellsEqual(a, b) {
+  if (a.length !== b.length) return false;
+  return a.every(([r, c], i) => r === b[i][0] && c === b[i][1]);
+}
+
+// Пробелы крупнее самой большой фигуры каталога (9 клеток, square-3x3) точно
+// не могут совпасть ни с одной фигурой целиком — не тратим на них сравнение.
+const MAX_MATCHABLE_POCKET_SIZE = 9;
+
+/**
+ * Ищет на поле изолированный пробел (Board.findAllEnclosedPockets), форма
+ * которого В ТОЧНОСТИ совпадает с какой-то фигурой каталога (фигуры не
+ * вращаются, R10.1 — совпадение только в исходной ориентации) — игрок
+ * попросил: если есть «дыра» под конкретную фигуру, эта фигура должна скоро
+ * появиться в лотке, а не просто когда-нибудь повезёт. Возвращает первую
+ * найденную такую фигуру или null, если подходящих пробелов нет.
+ * @param {import('./board.js').Board} board
+ * @returns {Shape | null}
+ */
+function findGapMatchingShape(board) {
+  const pockets = board.findAllEnclosedPockets();
+  for (const pocket of pockets) {
+    if (pocket.length === 0 || pocket.length > MAX_MATCHABLE_POCKET_SIZE) continue;
+    const normalizedPocket = normalizeCells(pocket.map((p) => [p.row, p.col]));
+    for (const shape of SHAPE_CATALOG) {
+      if (shape.cells.length !== normalizedPocket.length) continue;
+      if (cellsEqual(normalizedPocket, normalizeCells(shape.cells))) {
+        return shape;
+      }
+    }
+  }
+  return null;
 }
 
 // ---------- «умная» генерация (упрощённая версия) ----------
@@ -198,15 +247,24 @@ function pickForBoard(board, context = {}) {
  * вызов без контекста поля). С board — «умная» генерация (R05.5): каждая
  * из 3 фигур подбирается через pickForBoard независимо, глядя на одно и то
  * же текущее состояние поля (все три ещё не размещены, поле одно и то же
- * для всех трёх).
+ * для всех трёх). Если на поле прямо сейчас есть пробел, форма которого
+ * точно совпадает с какой-то фигурой каталога (findGapMatchingShape), одна
+ * из трёх фигур лотка гарантированно — именно она: игрок попросил, чтобы
+ * такая «дыра под фигуру» не оставалась на волю случая, а закрывалась уже
+ * следующим набором лотка.
  * @param {import('./board.js').Board} [board]
  * @param {{bigShapeRainActive?: boolean}} [context]
  * @returns {Shape[]}
  */
 export function generateShapeSet(board, context) {
+  const gapMatch = board ? findGapMatchingShape(board) : null;
   const result = [];
   for (let i = 0; i < 3; i++) {
-    result.push(board ? pickForBoard(board, context) : pickPureRandom());
+    if (i === 0 && gapMatch) {
+      result.push(cloneShape(gapMatch));
+    } else {
+      result.push(board ? pickForBoard(board, context) : pickPureRandom());
+    }
   }
   return result;
 }

@@ -10,8 +10,8 @@
 // DOM-обвязка (attachDragAndDrop) не тестируется юнит-тестами — см.
 // interfaces.md, раздел «Швы для тестов»: ui проверяется вручную при ревью.
 
-import { BOARD_SIZE } from '../game/board.js?v=0.4.7';
-import { computeCellSize, pixelToCell, drawShapeGhost } from './render.js?v=0.4.7';
+import { BOARD_SIZE } from '../game/board.js?v=0.4.8';
+import { computeCellSize, pixelToCell, drawShapeGhost } from './render.js?v=0.4.8';
 
 /**
  * Определяет, допустима ли позиция для фигуры прямо сейчас. Это и есть шов

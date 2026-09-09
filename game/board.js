@@ -199,6 +199,40 @@ export class Board {
   isEmpty() {
     return this.grid.every((row) => row.every((cell) => !cell));
   }
+
+  /**
+   * Все изолированные пустые области поля (4-связность), каждая — список
+   * своих клеток. В отличие от findEnclosedPocket (которая проверяет одну
+   * конкретную область относительно конкретной фигуры/позиции), сканирует
+   * ВСЁ поле и находит их все разом — используется «умной» генерацией
+   * (game/shapes.js), чтобы заметить дыру под конкретную фигуру, даже когда
+   * игрок ещё не начал драг ни одной фигуры в эту область.
+   * @returns {{row:number, col:number}[][]}
+   */
+  findAllEnclosedPockets() {
+    const visited = Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
+    const pockets = [];
+
+    for (let startRow = 0; startRow < SIZE; startRow++) {
+      for (let startCol = 0; startCol < SIZE; startCol++) {
+        if (this.grid[startRow][startCol] || visited[startRow][startCol]) continue;
+
+        const stack = [[startRow, startCol]];
+        const region = [];
+        while (stack.length) {
+          const [r, c] = stack.pop();
+          if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) continue;
+          if (visited[r][c] || this.grid[r][c]) continue;
+          visited[r][c] = true;
+          region.push({ row: r, col: c });
+          stack.push([r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]);
+        }
+        pockets.push(region);
+      }
+    }
+
+    return pockets;
+  }
 }
 
 export const BOARD_SIZE = SIZE;
