@@ -7,7 +7,7 @@
 // поле через game/board.js (findValidPlacements/canPlacePiece), чтобы не
 // выдавать фигуры, которые вообще некуда поставить, пока на поле есть место.
 
-import { BOARD_SIZE, findValidPlacements } from './board.js?v=0.4.5';
+import { BOARD_SIZE, findValidPlacements } from './board.js?v=0.4.6';
 
 /**
  * @typedef {{ id: string, cells: number[][] }} Shape
@@ -98,113 +98,50 @@ function pickPureRandom() {
   return cloneShape(SHAPE_CATALOG[Math.floor(Math.random() * SHAPE_CATALOG.length)]);
 }
 
-// Доля попыток, когда генератор намеренно предпочитает фигуру, у которой
-// хотя бы одна позиция создаёт комбо-очистку (R05.5, «иногда отдавать
-// фигуры для комбо») — не всегда, чтобы игра оставалась непредсказуемой.
-// В «затянувшейся» ситуации (см. effectiveComboBiasChance) этот шанс скрыто
-// растёт — игрок этого не видит, просто чаще получает шанс на комбо.
-const COMBO_BIAS_CHANCE = 0.25;
-const COMBO_BIAS_CHANCE_MAX = 0.75; // даже в самой сложной ситуации не 100% — не убирать элемент случайности
+// ---------- «умная» генерация (упрощённая версия) ----------
+// Раньше здесь было четыре независимые системы (скрытый шанс комбо-подсказки,
+// доп. вес за «спасительность» хода, волна крупных фигур по случайным фазам,
+// подавление неровных фигур), которые перемножались друг на другом и было
+// трудно предсказать итоговое поведение — игрок прямо попросил облегчить.
+// Теперь их две:
+// 1) «гибкость» — вес растёт с числом позиций фигуры на поле (как и раньше);
+// 2) единая «сложность партии» (0 → 1, растёт по числу поставленных фигур) —
+//    в начале партии щедро даёт крупные фигуры и сильно давит неровные
+//    (легко, приятно собирать комбо), к середине-концу партии смягчает и то,
+//    и другое (труднее, но не читерски — крупные/неровные не запрещены,
+//    просто не так сильно продвигаются). Жёсткий фильтр «есть хоть одна
+//    допустимая позиция» (findValidPlacements) остаётся первым и решающим —
+//    ни один из этих двух механизмов его не обходит.
 
-// Единичная фигура-«зонд»: findValidPlacements(DOT_PROBE, board).length —
-// ровно число пустых клеток поля (dot помещается в любую пустую клетку и
-// никакую другую) — дешёвый способ оценить «тесноту» поля без отдельного
-// метода Board для подсчёта пустых клеток.
-const DOT_PROBE = { cells: [[0, 0]] };
+// Сколько фигур нужно поставить за партию, чтобы сложность дошла до максимума.
+const DIFFICULTY_RAMP_SHAPES = 50;
 
-function boardOpenness(board) {
-  return findValidPlacements(DOT_PROBE, board).length / (BOARD_SIZE * BOARD_SIZE);
+function difficultyFor(shapesPlacedThisGame) {
+  return Math.min(1, shapesPlacedThisGame / DIFFICULTY_RAMP_SHAPES);
 }
 
-/**
- * Скрытая вероятность сузить выбор до «спасительных» фигур (R05.5, «скрытая
- * система вероятностей»): базовая COMBO_BIAS_CHANCE растёт, если игрок давно
- * не чистил линию (movesSinceClear) или поле уже тесное (openness — доля
- * свободных клеток) — то есть именно тогда, когда объективно сложно. Игрок
- * не видит эту вероятность и не может её просчитать — просто замечает, что
- * подходящие фигуры «иногда» приходят чаще, когда приходится тяжело.
- * @param {number} movesSinceClear
- * @param {number} openness
- * @returns {number}
- */
-function effectiveComboBiasChance(movesSinceClear, openness) {
-  let chance = COMBO_BIAS_CHANCE;
-  if (movesSinceClear >= 6) chance = Math.max(chance, 0.65);
-  else if (movesSinceClear >= 3) chance = Math.max(chance, 0.45);
-  if (openness < 0.2) chance = Math.max(chance, 0.65);
-  else if (openness < 0.35) chance = Math.max(chance, 0.45);
-  return Math.min(chance, COMBO_BIAS_CHANCE_MAX);
-}
-
-// Волновой ритм размера фигур (R05.9): без него крупные фигуры (2×3/3×3)
-// иногда «кучкуются» просто по случайности — игроку это ощущается как
-// нечестный всплеск сложности в начале партии, а не как продуманный ритм.
-// Вместо этого ведём фазу «крупных» / «мелких» фигур, которая двигается на
-// каждую реально выданную фигуру: внутри фазы выбор всё ещё случайный (это
-// множитель веса, а не жёсткий фильтр), просто крупные фигуры заметно чаще
-// в фазе «крупных» и заметно реже — в фазе «мелких». Длина фазы случайна
-// (не фиксированный период), чтобы ритм не ощущался метрономом и его нельзя
-// было просчитать. Состояние — на весь модуль (одна партия в один момент
-// времени в этой вкладке), resetWaveRhythm() зовёт app.js на новую партию.
 const LARGE_SHAPE_CELLS = 6; // от rect-2x3 (6 клеток) и крупнее — «крупная» фигура
-const PHASE_LENGTH_MIN = 8;
-const PHASE_LENGTH_MAX = 14;
-
-function randomPhaseLength() {
-  return PHASE_LENGTH_MIN + Math.floor(Math.random() * (PHASE_LENGTH_MAX - PHASE_LENGTH_MIN + 1));
-}
-
-function freshWaveState() {
-  return {
-    phase: Math.random() < 0.5 ? 'large' : 'small',
-    shapesLeftInPhase: randomPhaseLength(),
-  };
-}
-
-let waveState = freshWaveState();
-
-/** Сбрасывает волновой ритм размеров — вызывать на старте новой партии. */
-export function resetWaveRhythm() {
-  waveState = freshWaveState();
-}
-
-// Крупных фигур в каталоге всего 3 из 33 (rect-2x3-h/v, square-3x3) — при
-// слабом множителе волна тонет в шуме случайного выбора и её не заметно на
-// глаз, поэтому множители подобраны так, чтобы в фазе «крупных» они
-// попадались действительно заметно чаще (~40% отдельных фигур лотка), а в
-// фазе «мелких» — почти не попадались (~5%). Сама волна трогает только
-// крупные фигуры — мелкие/средние между собой распределяются как раньше.
-const LARGE_PHASE_BOOST = 7;
-const SMALL_PHASE_SUPPRESS = 0.5;
+const LARGE_BOOST_EARLY = 3; // множитель веса крупных фигур в начале партии
+const LARGE_BOOST_LATE = 0.6; // множитель веса крупных фигур к концу нарастания сложности
 
 /**
- * Множитель веса по текущей фазе волны — влияет только на крупные фигуры.
- * bigShapeRainActive (game/events.js, ивент «дождь крупных фигур») форсирует
- * тот же сильный буст, что и фаза «крупных», независимо от реальной фазы
- * волны — саму волну (waveState) при этом не трогаем, чтобы её ритм не сбился
- * и продолжился по расписанию после того, как ивент закончится. Это только
- * вес: фигуру, для которой findValidPlacements уже вернул пустой список (её
- * физически некуда поставить), сюда не пропускает более ранний фильтр в
- * pickForBoard — ивент никогда не обходит эту проверку.
+ * Множитель веса для крупных фигур — линейно едет от LARGE_BOOST_EARLY (щедро,
+ * старт партии) к LARGE_BOOST_LATE (реже, ближе к максимуму сложности).
+ * bigShapeRainActive (ивент «дождь крупных фигур», game/events.js) всегда
+ * форсирует ранний щедрый буст, независимо от текущей сложности партии.
  */
-function waveMultiplier(cellCount, bigShapeRainActive) {
+function largeShapeMultiplier(cellCount, difficulty, bigShapeRainActive) {
   if (cellCount < LARGE_SHAPE_CELLS) return 1;
-  if (bigShapeRainActive) return LARGE_PHASE_BOOST;
-  return waveState.phase === 'large' ? LARGE_PHASE_BOOST : SMALL_PHASE_SUPPRESS;
+  if (bigShapeRainActive) return LARGE_BOOST_EARLY;
+  return LARGE_BOOST_EARLY + (LARGE_BOOST_LATE - LARGE_BOOST_EARLY) * difficulty;
 }
 
 // «Неровные» фигуры — маленькие уголки-тримино (corner-1..4), большие уголки
-// (пентамино-V, pentomino-v-1..4 — тот же уголок, только на 5 клеток), зигзаги
-// (S/Z-тетромино), L- и Т-тетромино — тайлятся хуже прямых/прямоугольных
-// фигур того же размера: по своей форме они заметно чаще оставляют после себя
-// дыры в 1-2 клетки, которые потом некуда закрыть, и мешают когда-либо
-// собрать полную очистку поля. Игрок явно отметил, что даже после первого
-// снижения (0.35) они всё ещё попадаются часто, включая «большие уголки» —
-// добавили pentomino-v в тот же список и опустили множитель ниже (0.35→0.2).
-// Дело не в размере фигуры, а именно в её неровной форме — поэтому это не
-// отдельная система «классов по размеру», а расширение уже работающего
-// множителя веса. Не убираем совсем — только заметно снижаем вес выбора;
-// фильтр «есть хоть одна допустимая позиция» их всё равно не касается.
+// (пентамино-V, pentomino-v-1..4), зигзаги (S/Z-тетромино), L- и Т-тетромино —
+// тайлятся хуже прямых/прямоугольных фигур того же размера и чаще оставляют
+// дыры в 1-2 клетки. Не убираем совсем — вес едет от HOLE_PRONE_SUPPRESS_EARLY
+// (сильно подавлены, начало партии — легко) до HOLE_PRONE_SUPPRESS_LATE
+// (почти не подавлены — ближе к максимуму сложности).
 const HOLE_PRONE_SHAPE_IDS = new Set([
   'corner-1', 'corner-2', 'corner-3', 'corner-4',
   'pentomino-v-1', 'pentomino-v-2', 'pentomino-v-3', 'pentomino-v-4',
@@ -212,20 +149,13 @@ const HOLE_PRONE_SHAPE_IDS = new Set([
   'tetromino-l-1', 'tetromino-l-2', 'tetromino-l-3', 'tetromino-l-4',
   'tetromino-t-1', 'tetromino-t-2', 'tetromino-t-3', 'tetromino-t-4',
 ]);
-const HOLE_PRONE_SUPPRESS = 0.2;
+const HOLE_PRONE_SUPPRESS_EARLY = 0.15;
+const HOLE_PRONE_SUPPRESS_LATE = 0.6;
 
-/** Множитель веса для «неровных» фигур (уголки маленькие/большие, зигзаги, L, Т) — 1 для всех остальных. */
-function holeProneSuppressMultiplier(id) {
-  return HOLE_PRONE_SHAPE_IDS.has(id) ? HOLE_PRONE_SUPPRESS : 1;
-}
-
-/** Продвигает волну на одну реально выданную фигуру — переключает фазу, когда та кончается. */
-function advanceWave() {
-  waveState.shapesLeftInPhase -= 1;
-  if (waveState.shapesLeftInPhase <= 0) {
-    waveState.phase = waveState.phase === 'large' ? 'small' : 'large';
-    waveState.shapesLeftInPhase = randomPhaseLength();
-  }
+/** Множитель веса для «неровных» фигур — 1 для всех остальных. */
+function holeProneMultiplier(id, difficulty) {
+  if (!HOLE_PRONE_SHAPE_IDS.has(id)) return 1;
+  return HOLE_PRONE_SUPPRESS_EARLY + (HOLE_PRONE_SUPPRESS_LATE - HOLE_PRONE_SUPPRESS_EARLY) * difficulty;
 }
 
 /** Взвешенный случайный выбор — chance каждого элемента пропорционален его весу. */
@@ -241,68 +171,38 @@ function weightedPick(items, weightOf) {
 }
 
 /**
- * Выбирает одну фигуру каталога с учётом текущего поля и того, насколько
- * игроку сейчас тяжело (R05.5):
+ * Выбирает одну фигуру каталога с учётом текущего поля (R05.5):
  * 1) сначала оставляет только фигуры, у которых есть хоть одна допустимая
  *    позиция на этом поле (findValidPlacements) — не выдаём заведомо
  *    непригодную фигуру, пока есть выбор;
- * 2) внутри этого набора вес фигуры растёт с числом её позиций («гибкие»
- *    фигуры, которые проще пристроить дальше, чуть более вероятны —
- *    «желательно отдавать фигуры, которые позволяют продолжать игру»), но
- *    каждая подходящая фигура всё равно имеет ненулевой шанс;
- * 3) с вероятностью effectiveComboBiasChance (тем выше, чем дольше нет
- *    очистки и чем теснее поле — «скрытая система вероятностей») сужает
- *    выбор до фигур, у которых хотя бы одна позиция немедленно очистила бы
- *    линию — «иногда отдавать фигуры для комбо», по-настоящему чаще именно
- *    в сложной ситуации, а не всегда одинаково;
- * 4) в этой же сложной ситуации (см. struggling) дополнительно взвешивает
- *    внутри пула по тому, СКОЛЬКО клеток очистила бы лучшая позиция фигуры —
- *    не просто «может дать комбо», а «даёт заметно освободить поле»
- *    («помогают открыть новые свободные области»);
- * 5) сверху ещё домножает вес на текущую фазу волнового ритма размеров
- *    (R05.9, waveMultiplier) — крупные фигуры (2×3/3×3) заметно чаще в фазе
- *    «крупных» и заметно реже в фазе «мелких», фазы случайной длины сменяют
- *    друг друга, чтобы крупные фигуры не кучковались случайно, а шли
- *    предсказуемым для ощущений, но не для расчёта, ритмом.
+ * 2) вес растёт с числом позиций фигуры («гибкие» фигуры чуть вероятнее);
+ * 3) домножает на largeShapeMultiplier и holeProneMultiplier — оба зависят
+ *    от текущей сложности партии (см. difficultyFor выше).
  * Если на поле физически не помещается ни одна фигура каталога (крайний
  * случай — доска уже фактически проиграна), возвращает чистый случайный
  * выбор: подбирать тут больше не из чего.
  * @param {import('./board.js').Board} board
- * @param {{movesSinceClear?: number, bigShapeRainActive?: boolean}} [context] - movesSinceClear: сколько ходов подряд без очистки линии (app.js ведёт счётчик); bigShapeRainActive: активен ли ивент «дождь крупных фигур» (game/events.js)
+ * @param {{shapesPlacedThisGame?: number, bigShapeRainActive?: boolean}} [context] - shapesPlacedThisGame: сколько фигур уже поставлено в этой партии (двигает сложность); bigShapeRainActive: активен ли ивент «дождь крупных фигур» (game/events.js)
  * @returns {Shape}
  */
 function pickForBoard(board, context = {}) {
-  const movesSinceClear = context.movesSinceClear ?? 0;
+  const difficulty = difficultyFor(context.shapesPlacedThisGame ?? 0);
   const bigShapeRainActive = context.bigShapeRainActive ?? false;
 
-  const evaluated = SHAPE_CATALOG.map((source) => {
-    const placements = findValidPlacements(source, board);
-    let bestClearSize = 0;
-    for (const p of placements) {
-      const cleared = board.previewClear(source, p.row, p.col).cells.length;
-      if (cleared > bestClearSize) bestClearSize = cleared;
-    }
-    return { source, placements, bestClearSize };
-  });
+  const evaluated = SHAPE_CATALOG.map((source) => ({
+    source,
+    placements: findValidPlacements(source, board),
+  }));
 
   const placeable = evaluated.filter((e) => e.placements.length > 0);
   if (placeable.length === 0) return pickPureRandom();
 
-  const openness = boardOpenness(board);
-  const struggling = movesSinceClear >= 3 || openness < 0.35;
-
-  const comboCandidates = placeable.filter((e) => e.bestClearSize > 0);
-  const biasChance = effectiveComboBiasChance(movesSinceClear, openness);
-  const pool = comboCandidates.length > 0 && Math.random() < biasChance ? comboCandidates : placeable;
-
-  const picked = weightedPick(pool, (e) => {
+  const picked = weightedPick(placeable, (e) => {
     let weight = 1 + Math.min(e.placements.length, 10) * 0.5;
-    if (struggling) weight += e.bestClearSize * 0.8;
-    weight *= waveMultiplier(e.source.cells.length, bigShapeRainActive);
-    weight *= holeProneSuppressMultiplier(e.source.id);
+    weight *= largeShapeMultiplier(e.source.cells.length, difficulty, bigShapeRainActive);
+    weight *= holeProneMultiplier(e.source.id, difficulty);
     return weight;
   });
-  advanceWave();
   return cloneShape(picked.source);
 }
 
@@ -313,10 +213,9 @@ function pickForBoard(board, context = {}) {
  * вызов без контекста поля). С board — «умная» генерация (R05.5): каждая
  * из 3 фигур подбирается через pickForBoard независимо, глядя на одно и то
  * же текущее состояние поля (все три ещё не размещены, поле одно и то же
- * для всех трёх). context.movesSinceClear (от app.js) включает более
- * настойчивую помощь, когда игрок давно не чистил линию.
+ * для всех трёх).
  * @param {import('./board.js').Board} [board]
- * @param {{movesSinceClear?: number, bigShapeRainActive?: boolean}} [context]
+ * @param {{shapesPlacedThisGame?: number, bigShapeRainActive?: boolean}} [context]
  * @returns {Shape[]}
  */
 export function generateShapeSet(board, context) {

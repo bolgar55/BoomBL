@@ -6,7 +6,7 @@
 // и вне Telegram) и «Поделиться результатом» (через telegramBridge.shareResult).
 // DOM экрана модуль создаёт сам при первом show() и добавляет в container.
 
-import { animateScoreCountUp, playGameOverConfetti } from './animations.js?v=0.4.5';
+import { animateScoreCountUp, playGameOverConfetti } from './animations.js?v=0.4.6';
 
 const HIGH_SCORE_KEY = 'highScore';
 
