@@ -9,7 +9,7 @@
 // см. spec §Решения 6 — переключение темы делает вызывающий код через атрибут
 // data-theme на <html>, этот модуль лишь читает переданное имя темы).
 
-import { BOARD_SIZE } from '../game/board.js?v=0.4.6';
+import { BOARD_SIZE } from '../game/board.js?v=0.4.7';
 
 export const THEME = {
   dark: {

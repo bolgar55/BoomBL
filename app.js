@@ -21,12 +21,12 @@
 // modules), поэтому версию приходится вписывать вручную в каждую строку —
 // держать её синхронной с package.json/version-tag на каждый пуш (см.
 // memory: «always bump version»).
-import { Board, BOARD_SIZE, hasAnyValidMove } from './game/board.js?v=0.4.6';
-import { generateShapeSet } from './game/shapes.js?v=0.4.6';
-import { Score } from './game/score.js?v=0.4.6';
-import { createEventDirector } from './game/events.js?v=0.4.6';
-import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js?v=0.4.6';
-import { attachDragAndDrop, isValidDrop } from './ui/input.js?v=0.4.6';
+import { Board, BOARD_SIZE, hasAnyValidMove } from './game/board.js?v=0.4.7';
+import { generateShapeSet } from './game/shapes.js?v=0.4.7';
+import { Score } from './game/score.js?v=0.4.7';
+import { createEventDirector } from './game/events.js?v=0.4.7';
+import { computeCellSize, drawBoard, drawShapePreview, randomBlockColor } from './ui/render.js?v=0.4.7';
+import { attachDragAndDrop, isValidDrop } from './ui/input.js?v=0.4.7';
 import {
   playAppear,
   playShake,
@@ -38,15 +38,15 @@ import {
   createFullClearBurstLayer,
   animateScoreCountUp,
   playBonusPopup,
-} from './ui/animations.js?v=0.4.6';
-import { createPersistence } from './game/persistence.js?v=0.4.6';
-import { createTelegramBridge } from './telegram/bridge.js?v=0.4.6';
-import { createI18n } from './i18n/index.js?v=0.4.6';
-import { createChallenges } from './game/challenges.js?v=0.4.6';
-import { createAchievements } from './game/achievements.js?v=0.4.6';
-import { createGameOverScreen } from './ui/gameover.js?v=0.4.6';
-import { createAchievementsScreen, showAchievementUnlock, showEventToast } from './ui/achievements.js?v=0.4.6';
-import { loadConfig } from './config.js?v=0.4.6';
+} from './ui/animations.js?v=0.4.7';
+import { createPersistence } from './game/persistence.js?v=0.4.7';
+import { createTelegramBridge } from './telegram/bridge.js?v=0.4.7';
+import { createI18n } from './i18n/index.js?v=0.4.7';
+import { createChallenges } from './game/challenges.js?v=0.4.7';
+import { createAchievements } from './game/achievements.js?v=0.4.7';
+import { createGameOverScreen } from './ui/gameover.js?v=0.4.7';
+import { createAchievementsScreen, showAchievementUnlock, showEventToast } from './ui/achievements.js?v=0.4.7';
+import { loadConfig } from './config.js?v=0.4.7';
 
 // Бонус за закрытие изолированного пробела (R05.4) — за клетку закрытого
 // пробела. Открытое число баланса — не задано спецификацией, подобрано так,
@@ -473,11 +473,9 @@ async function main() {
   function refillTrayIfEmpty() {
     if (shapes.every((s) => s === null)) {
       reportAchievements({ traySetsUsed: 1 });
-      // «Умная» генерация (R05.5) смотрит на текущее поле и на сложность
-      // партии (растёт по числу поставленных фигур) — see game/shapes.js
+      // «Умная» генерация (R05.5) смотрит на текущее поле — see game/shapes.js
       // pickForBoard. bigShapeRainActive — ивент партии (game/events.js).
       shapes = generateShapeSet(board, {
-        shapesPlacedThisGame,
         bigShapeRainActive: eventDirector.isBigShapeRainActive(),
       });
       shapeColors = shapes.map(() => randomBlockColor());

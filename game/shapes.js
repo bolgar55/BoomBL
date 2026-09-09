@@ -7,7 +7,7 @@
 // поле через game/board.js (findValidPlacements/canPlacePiece), чтобы не
 // выдавать фигуры, которые вообще некуда поставить, пока на поле есть место.
 
-import { BOARD_SIZE, findValidPlacements } from './board.js?v=0.4.6';
+import { BOARD_SIZE, findValidPlacements } from './board.js?v=0.4.7';
 
 /**
  * @typedef {{ id: string, cells: number[][] }} Shape
@@ -102,46 +102,34 @@ function pickPureRandom() {
 // Раньше здесь было четыре независимые системы (скрытый шанс комбо-подсказки,
 // доп. вес за «спасительность» хода, волна крупных фигур по случайным фазам,
 // подавление неровных фигур), которые перемножались друг на другом и было
-// трудно предсказать итоговое поведение — игрок прямо попросил облегчить.
-// Теперь их две:
-// 1) «гибкость» — вес растёт с числом позиций фигуры на поле (как и раньше);
-// 2) единая «сложность партии» (0 → 1, растёт по числу поставленных фигур) —
-//    в начале партии щедро даёт крупные фигуры и сильно давит неровные
-//    (легко, приятно собирать комбо), к середине-концу партии смягчает и то,
-//    и другое (труднее, но не читерски — крупные/неровные не запрещены,
-//    просто не так сильно продвигаются). Жёсткий фильтр «есть хоть одна
-//    допустимая позиция» (findValidPlacements) остаётся первым и решающим —
-//    ни один из этих двух механизмов его не обходит.
-
-// Сколько фигур нужно поставить за партию, чтобы сложность дошла до максимума.
-const DIFFICULTY_RAMP_SHAPES = 50;
-
-function difficultyFor(shapesPlacedThisGame) {
-  return Math.min(1, shapesPlacedThisGame / DIFFICULTY_RAMP_SHAPES);
-}
+// трудно предсказать итоговое поведение — игрок попросил облегчить. Была
+// промежуточная версия с растущей по ходу партии «сложностью» (0→1), но она
+// на максимуме навсегда застревала в тяжёлом режиме до конца длинной партии —
+// тоже не вариант, убрали и её. Теперь всего одна система:
+// «гибкость» — вес фигуры растёт с числом её позиций на поле, плюс два
+// постоянных множителя (крупные фигуры чуть чаще, неровные — заметно реже)
+// без всякой прогрессии по ходу партии. Жёсткий фильтр «есть хоть одна
+// допустимая позиция» (findValidPlacements) остаётся первым и решающим.
 
 const LARGE_SHAPE_CELLS = 6; // от rect-2x3 (6 клеток) и крупнее — «крупная» фигура
-const LARGE_BOOST_EARLY = 3; // множитель веса крупных фигур в начале партии
-const LARGE_BOOST_LATE = 0.6; // множитель веса крупных фигур к концу нарастания сложности
+const LARGE_SHAPE_BOOST = 3; // постоянный множитель веса крупных фигур
+const LARGE_SHAPE_BOOST_EVENT = 7; // множитель во время ивента «дождь крупных фигур»
 
 /**
- * Множитель веса для крупных фигур — линейно едет от LARGE_BOOST_EARLY (щедро,
- * старт партии) к LARGE_BOOST_LATE (реже, ближе к максимуму сложности).
- * bigShapeRainActive (ивент «дождь крупных фигур», game/events.js) всегда
- * форсирует ранний щедрый буст, независимо от текущей сложности партии.
+ * Множитель веса для крупных фигур — постоянный (без прогрессии по партии),
+ * но ощутимо выше во время ивента «дождь крупных фигур» (game/events.js), иначе
+ * сам ивент был бы неотличим от обычной игры.
  */
-function largeShapeMultiplier(cellCount, difficulty, bigShapeRainActive) {
+function largeShapeMultiplier(cellCount, bigShapeRainActive) {
   if (cellCount < LARGE_SHAPE_CELLS) return 1;
-  if (bigShapeRainActive) return LARGE_BOOST_EARLY;
-  return LARGE_BOOST_EARLY + (LARGE_BOOST_LATE - LARGE_BOOST_EARLY) * difficulty;
+  return bigShapeRainActive ? LARGE_SHAPE_BOOST_EVENT : LARGE_SHAPE_BOOST;
 }
 
 // «Неровные» фигуры — маленькие уголки-тримино (corner-1..4), большие уголки
 // (пентамино-V, pentomino-v-1..4), зигзаги (S/Z-тетромино), L- и Т-тетромино —
 // тайлятся хуже прямых/прямоугольных фигур того же размера и чаще оставляют
-// дыры в 1-2 клетки. Не убираем совсем — вес едет от HOLE_PRONE_SUPPRESS_EARLY
-// (сильно подавлены, начало партии — легко) до HOLE_PRONE_SUPPRESS_LATE
-// (почти не подавлены — ближе к максимуму сложности).
+// дыры в 1-2 клетки. Не убираем совсем — просто постоянно снижаем вес выбора,
+// без прогрессии по ходу партии.
 const HOLE_PRONE_SHAPE_IDS = new Set([
   'corner-1', 'corner-2', 'corner-3', 'corner-4',
   'pentomino-v-1', 'pentomino-v-2', 'pentomino-v-3', 'pentomino-v-4',
@@ -149,13 +137,11 @@ const HOLE_PRONE_SHAPE_IDS = new Set([
   'tetromino-l-1', 'tetromino-l-2', 'tetromino-l-3', 'tetromino-l-4',
   'tetromino-t-1', 'tetromino-t-2', 'tetromino-t-3', 'tetromino-t-4',
 ]);
-const HOLE_PRONE_SUPPRESS_EARLY = 0.15;
-const HOLE_PRONE_SUPPRESS_LATE = 0.6;
+const HOLE_PRONE_SUPPRESS = 0.2;
 
 /** Множитель веса для «неровных» фигур — 1 для всех остальных. */
-function holeProneMultiplier(id, difficulty) {
-  if (!HOLE_PRONE_SHAPE_IDS.has(id)) return 1;
-  return HOLE_PRONE_SUPPRESS_EARLY + (HOLE_PRONE_SUPPRESS_LATE - HOLE_PRONE_SUPPRESS_EARLY) * difficulty;
+function holeProneMultiplier(id) {
+  return HOLE_PRONE_SHAPE_IDS.has(id) ? HOLE_PRONE_SUPPRESS : 1;
 }
 
 /** Взвешенный случайный выбор — chance каждого элемента пропорционален его весу. */
@@ -176,17 +162,16 @@ function weightedPick(items, weightOf) {
  *    позиция на этом поле (findValidPlacements) — не выдаём заведомо
  *    непригодную фигуру, пока есть выбор;
  * 2) вес растёт с числом позиций фигуры («гибкие» фигуры чуть вероятнее);
- * 3) домножает на largeShapeMultiplier и holeProneMultiplier — оба зависят
- *    от текущей сложности партии (см. difficultyFor выше).
+ * 3) домножает на largeShapeMultiplier и holeProneMultiplier — оба постоянны
+ *    весь ход партии, без прогрессии.
  * Если на поле физически не помещается ни одна фигура каталога (крайний
  * случай — доска уже фактически проиграна), возвращает чистый случайный
  * выбор: подбирать тут больше не из чего.
  * @param {import('./board.js').Board} board
- * @param {{shapesPlacedThisGame?: number, bigShapeRainActive?: boolean}} [context] - shapesPlacedThisGame: сколько фигур уже поставлено в этой партии (двигает сложность); bigShapeRainActive: активен ли ивент «дождь крупных фигур» (game/events.js)
+ * @param {{bigShapeRainActive?: boolean}} [context] - bigShapeRainActive: активен ли ивент «дождь крупных фигур» (game/events.js)
  * @returns {Shape}
  */
 function pickForBoard(board, context = {}) {
-  const difficulty = difficultyFor(context.shapesPlacedThisGame ?? 0);
   const bigShapeRainActive = context.bigShapeRainActive ?? false;
 
   const evaluated = SHAPE_CATALOG.map((source) => ({
@@ -199,8 +184,8 @@ function pickForBoard(board, context = {}) {
 
   const picked = weightedPick(placeable, (e) => {
     let weight = 1 + Math.min(e.placements.length, 10) * 0.5;
-    weight *= largeShapeMultiplier(e.source.cells.length, difficulty, bigShapeRainActive);
-    weight *= holeProneMultiplier(e.source.id, difficulty);
+    weight *= largeShapeMultiplier(e.source.cells.length, bigShapeRainActive);
+    weight *= holeProneMultiplier(e.source.id);
     return weight;
   });
   return cloneShape(picked.source);
@@ -215,7 +200,7 @@ function pickForBoard(board, context = {}) {
  * же текущее состояние поля (все три ещё не размещены, поле одно и то же
  * для всех трёх).
  * @param {import('./board.js').Board} [board]
- * @param {{shapesPlacedThisGame?: number, bigShapeRainActive?: boolean}} [context]
+ * @param {{bigShapeRainActive?: boolean}} [context]
  * @returns {Shape[]}
  */
 export function generateShapeSet(board, context) {
